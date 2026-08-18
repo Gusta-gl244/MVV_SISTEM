@@ -42,24 +42,62 @@ export async function getDeletedSince(entity, since) {
 }
 
 /**
- * Upsert com last-write-wins por registro. Só sobrescreve se o payload
- * recebido é igual ou mais novo que o que já está gravado — protege contra
- * um dispositivo que ficou dias offline empurrando uma versão antiga por
- * cima de uma edição mais recente feita por outra pessoa nesse meio-tempo.
+ * Upsert com last-write-wins por registro — mas "mais novo" é decidido por
+ * causalidade (o registro mudou no servidor, por causa de OUTRO
+ * dispositivo, desde a última vez que este dispositivo o viu?), nunca
+ * comparando relógios de dispositivos entre si.
+ *
+ * `payload.updatedAt` é o `updatedAt` que o próprio cliente tinha gravado
+ * localmente para esse registro (veio de um pull anterior). Se bater com o
+ * que está no servidor agora, o cliente estava editando em cima da versão
+ * mais recente que existe — aplica, mesmo que o relógio do aparelho esteja
+ * atrasado.
+ *
+ * Se não bater mas quem gravou por último foi ESTE MESMO dispositivo, ainda
+ * não é conflito — é o dispositivo aplicando a mutação seguinte da própria
+ * fila offline (ex.: iniciar e concluir uma ordem offline geram duas
+ * mutações para o mesmo registro; a segunda chega com o mesmo
+ * payload.updatedAt "antigo" da primeira, porque nada localmente atualiza
+ * esse campo entre as duas — só o servidor faz isso, na hora que aplica).
+ * Só é conflito de verdade quando o servidor tem uma versão de OUTRO
+ * dispositivo que este nunca chegou a ver.
+ *
+ * Antes disso comparava `clientUpdatedAt` (relógio do tablet) contra
+ * `existing.updatedAt` (relógio do servidor) — e um tablet minutos atrasado
+ * (comum em campo, sem internet pra sincronizar hora) fazia uma inspeção
+ * concluída offline parecer "mais antiga" que a própria atribuição da
+ * ordem, perdendo a conclusão ao sincronizar.
  */
 export async function upsertLWW(entity, id, payload, clientUpdatedAt, deviceId) {
   const t = tableName(entity);
-  const existing = await getQueryOne(`SELECT "updatedAt" FROM ${t} WHERE id = $1`, [id]);
+  const columns = await getColumns(entity);
+  const hasDeviceIdColumn = columns.includes('deviceId');
 
-  if (existing && new Date(existing.updatedAt).getTime() > new Date(clientUpdatedAt).getTime()) {
-    // Servidor já tem uma versão mais nova — mantém a dele e devolve como está.
+  const existingSelect = hasDeviceIdColumn ? '"updatedAt", "deviceId"' : '"updatedAt"';
+  const existing = await getQueryOne(`SELECT ${existingSelect} FROM ${t} WHERE id = $1`, [id]);
+
+  const knownUpdatedAt = payload?.updatedAt ?? null;
+  const sameDeviceAsLastWriter =
+    hasDeviceIdColumn && !!existing && !!deviceId && existing.deviceId === deviceId;
+  const hasConflict =
+    !!existing &&
+    !!knownUpdatedAt &&
+    new Date(existing.updatedAt).getTime() !== new Date(knownUpdatedAt).getTime() &&
+    !sameDeviceAsLastWriter;
+
+  if (hasConflict) {
+    // Servidor tem uma versão de outro dispositivo que este nunca viu — mantém a dele.
     return { conflict: true, record: await getQueryOne(`SELECT * FROM ${t} WHERE id = $1`, [id]) };
   }
 
-  const columns = await getColumns(entity);
   const now = new Date().toISOString();
-  const row = { ...payload, id, updatedAt: clientUpdatedAt || now, deviceId: deviceId ?? payload.deviceId ?? null, deletedAt: null };
-  if (!existing) row.createdAt = row.createdAt || now;
+  // "updatedAt" é sempre o relógio do servidor, nunca o do dispositivo — é
+  // o cursor que outros clientes usam pra saber o que puxar (GET
+  // /sync/pull?since=...); se fosse o relógio do tablet, um aparelho
+  // atrasado poderia gravar um updatedAt "no passado" e essa mudança nunca
+  // seria vista por ninguém que já tivesse puxado depois desse horário.
+  const row = { ...payload, id, updatedAt: now, deviceId: deviceId ?? payload.deviceId ?? null, deletedAt: null };
+  if (!existing) row.createdAt = row.createdAt || clientUpdatedAt || now;
 
   const fields = columns.filter((c) => c in row);
   const values = fields.map((f) => serializeValue(row[f]));
@@ -76,9 +114,9 @@ export async function upsertLWW(entity, id, payload, clientUpdatedAt, deviceId) 
   return { conflict: false, record: await getQueryOne(`SELECT * FROM ${t} WHERE id = $1`, [id]) };
 }
 
-export async function softDelete(entity, id, clientUpdatedAt) {
+export async function softDelete(entity, id) {
   const t = tableName(entity);
-  const now = clientUpdatedAt || new Date().toISOString();
+  const now = new Date().toISOString();
   await runSQL(`UPDATE ${t} SET "deletedAt" = $1, "updatedAt" = $1 WHERE id = $2`, [now, id]);
   return { id, deletedAt: now };
 }

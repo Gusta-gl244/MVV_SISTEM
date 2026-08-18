@@ -42,7 +42,7 @@ router.post('/push', async (req, res) => {
         }
 
         if (m.op === 'delete') {
-          const record = await queries.softDelete(m.entity, m.id, m.clientUpdatedAt);
+          const record = await queries.softDelete(m.entity, m.id);
           results.push({ clientOpId: m.clientOpId, status: 'ok', record });
         } else {
           const { conflict, record } = await queries.upsertLWW(m.entity, m.id, m.payload, m.clientUpdatedAt, m.deviceId);
