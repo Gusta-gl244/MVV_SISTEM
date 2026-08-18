@@ -1,3 +1,9 @@
+databases:
+  - name: inspec360-db
+    plan: free
+    databaseName: inspec360
+    user: inspec360
+
 services:
   - type: web
     name: inspec360
@@ -14,3 +20,5 @@ services:
         fromDatabase:
           name: inspec360-db
           property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
