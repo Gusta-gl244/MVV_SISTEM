@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import inspec360Logo from '../../assets/brand/inspec360-color.png';
 import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
 import { Button } from './ui/button';
@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { authenticate } from '../data/store';
 import type { User } from '../App';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, X } from 'lucide-react';
 import { useVersionInfo, formatUpdateTime } from '@/hooks/useVersionInfo';
 
 interface LoginScreenProps {
@@ -18,9 +18,19 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showCredits, setShowCredits] = useState(false);
   const versionInfo = useVersionInfo();
 
   const isDevMode = import.meta.env.VITE_DEV_MODE === 'true';
+
+  useEffect(() => {
+    if (!showCredits) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowCredits(false);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showCredits]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,6 +166,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         {/* Bottom watermark */}
         <p className="text-center text-white/30 text-[10px] mt-4">
           © 2026 INSPEC360 · Mineração Vale Verde · v{versionInfo?.version || '2.2.0'}
+          {' · '}
+          <button
+            type="button"
+            onClick={() => setShowCredits(true)}
+            className="underline decoration-dotted underline-offset-2 hover:text-white/60 transition-colors"
+          >
+            Créditos
+          </button>
         </p>
 
         {/* Last update info */}
@@ -174,6 +192,68 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           />
         </div>
       </div>
+
+      {/* Painel de créditos */}
+      {showCredits && (
+        <div
+          className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4"
+          onClick={() => setShowCredits(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl overflow-hidden w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-1.5" style={{ backgroundColor: '#AA8933' }} />
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h2 style={{ color: '#193A2A' }} className="text-base">Créditos</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowCredits(false)}
+                  className="text-gray-300 hover:text-gray-600 transition-colors -mt-1 -mr-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Sistema</p>
+                  <p className="text-gray-700">INSPEC360 — Sistema de Inspeções de Torres de Alta Tensão (LT 230kV)</p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Desenvolvido por</p>
+                  <p className="text-gray-700">Gustavo Pereira</p>
+                  <p className="text-xs text-gray-500">Estagiário de Engenharia de Manutenção</p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Gerenciado por</p>
+                  <p className="text-gray-700">Mineração Vale Verde</p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Produzido por</p>
+                  <p className="text-gray-700">Mineração Vale Verde · BNMC</p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Versão</p>
+                  <p className="text-gray-700">
+                    v{versionInfo?.version || '2.2.0'}
+                    {versionInfo && ` · atualizado em ${formatUpdateTime(versionInfo.buildDate)}`}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-center text-gray-300 text-[10px] mt-6 pt-4 border-t border-gray-100">
+                © 2026 INSPEC360
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
