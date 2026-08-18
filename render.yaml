@@ -1,9 +1,3 @@
-databases:
-  - name: inspec360-db
-    plan: free
-    databaseName: inspec360
-    user: inspec360
-
 services:
   - type: web
     name: inspec360
@@ -17,8 +11,6 @@ services:
       - key: VITE_API_URL
         value: /api
       - key: DATABASE_URL
-        fromDatabase:
-          name: inspec360-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
