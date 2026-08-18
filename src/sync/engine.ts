@@ -103,16 +103,29 @@ export async function drainOutbox(): Promise<void> {
 
       await offlineStorage.removeFromOutbox(result.clientOpId);
 
+      const collection = ENTITY_TO_COLLECTION[mutation.entity];
+      if (!local || !collection || !Array.isArray(local[collection])) continue;
+
+      if (mutation.op === 'delete') {
+        // Exclusão confirmada pelo servidor — o registro já tinha sido
+        // removido localmente na hora da ação (deleteServiceOrder etc.), só
+        // garante que continua fora. Nunca reaplica `result.record` aqui:
+        // ele é só um stub `{ id, deletedAt }` (softDelete não devolve o
+        // registro inteiro) — tratá-lo como "registro não encontrado,
+        // deve ser novo" (o ramo abaixo, usado por create/update) recolocava
+        // essa exclusão de volta na lista local com todos os outros campos
+        // vazios, fazendo a ordem excluída "reaparecer" fantasma.
+        local[collection] = local[collection].filter((r: any) => r.id !== mutation.id);
+        continue;
+      }
+
       // Aplica a versão autoritativa devolvida pelo servidor (em caso de
       // conflito, é a versão do servidor que prevalece — a nossa foi mais
       // antiga que uma edição já confirmada por outra pessoa).
-      if (local && result.record) {
-        const collection = ENTITY_TO_COLLECTION[mutation.entity];
-        if (collection && Array.isArray(local[collection])) {
-          const idx = local[collection].findIndex((r: any) => r.id === result.record.id);
-          if (idx >= 0) local[collection][idx] = result.record;
-          else local[collection].push(result.record);
-        }
+      if (result.record) {
+        const idx = local[collection].findIndex((r: any) => r.id === result.record.id);
+        if (idx >= 0) local[collection][idx] = result.record;
+        else local[collection].push(result.record);
       }
     }
 
