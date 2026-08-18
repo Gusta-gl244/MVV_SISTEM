@@ -1,12 +1,11 @@
 // Versionamento: Muda automaticamente para forçar novo cache
-const BUILD_VERSION = '20260601-001'
+const BUILD_VERSION = '20260818-002'
 const CACHE_NAME = `inspec360-v2-cache-${BUILD_VERSION}`
 
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json',
-  '/src/main.tsx'
+  '/manifest.json'
 ]
 
 // Install - cache static assets

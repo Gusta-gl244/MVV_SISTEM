@@ -1,5 +1,5 @@
 {
-  "name": "INSPEC360 v2.1.0 - Inspeções de Linha de Transmissão",
+  "name": "INSPEC360 - Inspeções de Linha de Transmissão",
   "short_name": "INSPEC360",
   "description": "Sistema de Inspeção de Linhas de Transmissão - Funciona Offline",
   "start_url": "/",
@@ -7,30 +7,33 @@
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
-  "theme_color": "#0ea5e9",
+  "theme_color": "#193A2A",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%230ea5e9' width='192' height='192'/><text x='50%' y='50%' font-size='80' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='central'>IN</text></svg>",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%230ea5e9' width='192' height='192'/><text x='50%' y='50%' font-size='80' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='central'>IN</text></svg>",
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%230ea5e9' width='540' height='720'/><text x='50%' y='50%' font-size='60' fill='white' text-anchor='middle' dominant-baseline='central'>INSPEC360</text></svg>",
-      "sizes": "540x720",
-      "type": "image/svg+xml",
-      "form_factor": "narrow"
-    }
-  ],
   "categories": ["productivity", "utilities"],
-  "screenshots_support": true,
   "prefer_related_applications": false
 }
