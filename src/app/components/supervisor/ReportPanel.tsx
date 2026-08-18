@@ -18,6 +18,12 @@ import { Button } from '../ui/button';
 import type { ServiceOrder, Structure, InspectionType } from '../../data/types';
 import { INSPECTION_TYPES } from '../../data/types';
 import { collectOrderPhotos } from '../../data/orderPhotos';
+import inspec360Icon from '../../../assets/brand/inspec360-icon-white.png';
+import grupoLogo from '../../../assets/brand/grupo-mvv-bnmc.png';
+
+// Absoluta porque o relatório abre numa janela `about:blank` (window.open + document.write) —
+// um caminho relativo ao bundle não resolveria contra a origem certa nessa janela.
+const absoluteAssetUrl = (path: string) => new URL(path, window.location.href).href;
 
 interface ReportPanelProps {
   orders: ServiceOrder[];
@@ -180,6 +186,10 @@ function generateReportPDF(
       color: white; padding: 48px 40px;
     }
     .cover-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+    .cover-brand { display: flex; align-items: center; gap: 10px; }
+    .cover-logo { height: 42px; width: 42px; }
+    .cover-wordmark { font-size: 15pt; letter-spacing: 0.5px; }
+    .cover-wordmark .accent { color: #AA8933; }
     .cover-divider { width: 1px; height: 50px; background: rgba(255,255,255,0.3); }
     .cover h1 { font-size: 24pt; letter-spacing: 0.5px; }
     .cover h2 { font-size: 12pt; opacity: 0.8; margin-top: 4px; }
@@ -249,9 +259,10 @@ function generateReportPDF(
 
     .footer {
       margin-top: 32px; padding-top: 14px; border-top: 1px solid #e5e7eb;
-      display: flex; justify-content: space-between;
+      display: flex; justify-content: space-between; align-items: center;
       color: #9ca3af; font-size: 8pt;
     }
+    .footer-logo { height: 20px; width: auto; opacity: 0.85; }
 
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -264,6 +275,11 @@ function generateReportPDF(
 
 <div class="cover">
   <div class="cover-header">
+    <div class="cover-brand">
+      <img src="${absoluteAssetUrl(inspec360Icon)}" alt="" class="cover-logo" />
+      <span class="cover-wordmark">INSPEC<span class="accent">360</span></span>
+    </div>
+    <div class="cover-divider"></div>
     <div>
       <h1>Relatório Analítico</h1>
       <h2>INSPEC360 · Sistema de Inspeções · LT 230kV</h2>
@@ -373,7 +389,7 @@ function generateReportPDF(
   }
 
   <div class="footer">
-    <span>INSPEC360 · Mineração Vale Verde · LT 230kV</span>
+    <img src="${absoluteAssetUrl(grupoLogo)}" alt="Mineração Vale Verde · BNMC" class="footer-logo" />
     <span>Gerado em ${now}</span>
     <span>${total} registro${total !== 1 ? 's' : ''} · ${completionRate}% conclusão</span>
   </div>

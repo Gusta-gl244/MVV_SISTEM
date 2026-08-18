@@ -8,6 +8,11 @@ import {
   STRUCTURE_STATUS_COLORS as STATUS_COLORS,
   STRUCTURE_STATUS_LABELS as STATUS_LABELS,
 } from '../../data/structureStatus';
+import { useOnlineStatus } from '../../../context/OfflineContext';
+
+// Zoom mínimo a partir do qual o rótulo com o nome da torre aparece sobre o
+// pino — abaixo disso, com muitas torres na tela, o rótulo só poluiria.
+const LABEL_MIN_ZOOM = 13;
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -33,6 +38,27 @@ function makeIcon(color: string) {
     iconSize: [24, 24],
     iconAnchor: [12, 22],
     popupAnchor: [0, -24],
+  });
+}
+
+function makeMyLocationIcon() {
+  return L.divIcon({
+    className: '',
+    html: `
+      <div style="position:relative;width:18px;height:18px;">
+        <div style="
+          position:absolute;inset:-10px;border-radius:50%;
+          background:#2563eb33;animation:pulse 2s ease-out infinite;
+        "></div>
+        <div style="
+          width:18px;height:18px;border-radius:50%;
+          background:#2563eb;border:3px solid white;
+          box-shadow:0 1px 5px rgba(0,0,0,0.5);
+        "></div>
+      </div>
+    `,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 }
 
@@ -77,16 +103,32 @@ export function MapComponent({
   const markersRef = useRef<L.Marker[]>([]);
   const pendingMarkerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
+  const myLocationMarkerRef = useRef<L.Marker | null>(null);
   const onStructureClickRef = useRef(onStructureClick);
   const structuresRef = useRef(structures);
   const ordersRef = useRef(orders);
+  const { location } = useOnlineStatus();
 
-  const CENTER: [number, number] = [-9.4419, -36.7673];
+  // Subestação principal da Mineração Vale Verde — coordenada real
+  // conferida pelo usuário (a anterior era uma estimativa incorreta).
+  const CENTER: [number, number] = [-9.67346741500018, -36.74303453562654];
 
   // Keep refs in sync without re-running effects
   useEffect(() => { onStructureClickRef.current = onStructureClick; }, [onStructureClick]);
   useEffect(() => { structuresRef.current = structures; }, [structures]);
   useEffect(() => { ordersRef.current = orders; }, [orders]);
+
+  // Mostra/esconde os rótulos de nome da torre conforme o zoom atual —
+  // evita poluir a tela quando várias torres estão visíveis de uma vez.
+  const updateLabelVisibility = useCallback((map: L.Map) => {
+    const show = map.getZoom() >= LABEL_MIN_ZOOM;
+    markersRef.current.forEach((m) => {
+      const tooltip = m.getTooltip();
+      if (!tooltip) return;
+      const el = tooltip.getElement();
+      if (el) el.style.display = show ? '' : 'none';
+    });
+  }, []);
 
   // Render markers — can be called from map-init OR structures effect
   const renderMarkers = useCallback((map: L.Map, structs: Structure[], ords: ServiceOrder[]) => {
@@ -133,10 +175,21 @@ export function MapComponent({
       `;
 
       marker.bindPopup(popupContent, { maxWidth: 220 });
+      // Rótulo discreto e permanente com o nome da torre (ex.: "2/2"),
+      // só visível a partir de um certo zoom para não poluir a visão geral.
+      marker.bindTooltip(s.name || '—', {
+        permanent: true,
+        direction: 'top',
+        offset: [0, -22],
+        opacity: 0.9,
+        className: 'tower-label',
+      });
       marker.on('click', () => onStructureClickRef.current?.(s));
       marker.addTo(map);
       markersRef.current.push(marker);
     });
+
+    updateLabelVisibility(map);
 
     // Auto-fit map to show all structure markers
     if (validPoints.length > 0) {
@@ -146,7 +199,7 @@ export function MapComponent({
         map.fitBounds(L.latLngBounds(validPoints), { padding: [40, 40], maxZoom: 14 });
       }
     }
-  }, []);
+  }, [updateLabelVisibility]);
 
   // Initialize map once
   useEffect(() => {
@@ -158,10 +211,26 @@ export function MapComponent({
       zoomControl: true,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Satélite (Esri World Imagery — imagem atualizada, sem chave de API
+    // necessária) como camada padrão, com ruas do OpenStreetMap como
+    // alternativa via o seletor de camadas no canto superior direito.
+    const satelliteLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics', maxZoom: 19 }
+    );
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19,
-    }).addTo(map);
+    });
+
+    satelliteLayer.addTo(map);
+    L.control.layers(
+      { 'Satélite': satelliteLayer, 'Ruas': streetLayer },
+      undefined,
+      { position: 'topright', collapsed: true }
+    ).addTo(map);
+
+    map.on('zoomend', () => updateLabelVisibility(map));
 
     circleRef.current = L.circle(CENTER, {
       radius: 40000,
@@ -245,6 +314,26 @@ export function MapComponent({
     }
   }, [pendingPin]);
 
+  // Marcador "você está aqui" — localização em tempo real de quem está
+  // olhando o mapa (útil no tablet em campo para se situar em relação às
+  // torres). Reaproveita o watchPosition já rodando em OfflineContext em
+  // vez de abrir uma segunda assinatura de geolocalização.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !location) return;
+
+    if (myLocationMarkerRef.current) {
+      myLocationMarkerRef.current.setLatLng([location.latitude, location.longitude]);
+    } else {
+      myLocationMarkerRef.current = L.marker([location.latitude, location.longitude], {
+        icon: makeMyLocationIcon(),
+        zIndexOffset: 1000,
+      })
+        .bindTooltip('Você está aqui', { direction: 'right', offset: [10, 0] })
+        .addTo(map);
+    }
+  }, [location]);
+
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full rounded-xl overflow-hidden" />
@@ -264,6 +353,12 @@ export function MapComponent({
           <div className="w-12 h-0.5" style={{ borderTop: '1.5px dashed #AA8933' }} />
           <span className="text-xs text-gray-400">Raio 40km</span>
         </div>
+        {location && (
+          <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#2563eb' }} />
+            <span className="text-xs text-gray-600">Sua localização</span>
+          </div>
+        )}
       </div>
 
       {isAddingMode && (
@@ -280,6 +375,17 @@ export function MapComponent({
           0%, 100% { transform: scale(1); opacity: 0.3; }
           50% { transform: scale(1.6); opacity: 0; }
         }
+        .tower-label {
+          background: rgba(25, 58, 42, 0.85);
+          border: none;
+          color: white;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 1px 5px;
+          border-radius: 4px;
+          box-shadow: none;
+        }
+        .tower-label::before { display: none; }
       `}</style>
     </div>
   );

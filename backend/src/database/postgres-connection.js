@@ -13,26 +13,25 @@ export async function initDb() {
   }
 
   const databaseUrl = process.env.DATABASE_URL;
-  
+
   if (!databaseUrl) {
     throw new Error('❌ DATABASE_URL não definida! Configure a variável de ambiente com a connection string do PostgreSQL.');
   }
 
+  const isLocal = /localhost|127\.0\.0\.1/.test(databaseUrl);
+
   try {
     console.log('📦 Conectando ao PostgreSQL...');
-    
+
     pool = new pg.Pool({
       connectionString: databaseUrl,
-      ssl: {
-        rejectUnauthorized: false // Render usa SSL
-      }
+      // Instância local (dev) não usa TLS; o Postgres gerenciado do Render exige.
+      ssl: isLocal ? false : { rejectUnauthorized: false },
     });
 
-    // Testar conexão
     const client = await pool.connect();
     console.log('✅ Conectado ao PostgreSQL com sucesso!');
     client.release();
-    
   } catch (error) {
     console.error('❌ Erro ao conectar PostgreSQL:', error.message);
     throw error;
@@ -111,14 +110,6 @@ export function getDbInfo() {
   return {
     type: 'PostgreSQL',
     status: 'connected',
-    host: pool._clients?.[0]?.host || 'unknown',
-    database: pool._clients?.[0]?.database || 'unknown',
     timestamp: new Date().toISOString()
   };
-}
-
-export async function saveDb() {
-  // PostgreSQL salva automaticamente - não precisa fazer nada
-  console.log('💾 Dados salvos no PostgreSQL');
-  return true;
 }

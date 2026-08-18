@@ -1,7 +1,6 @@
 // Versionamento: Muda automaticamente para forçar novo cache
 const BUILD_VERSION = '20260601-001'
 const CACHE_NAME = `inspec360-v2-cache-${BUILD_VERSION}`
-const SYNC_TAG = 'inspec360-sync'
 
 const STATIC_ASSETS = [
   '/',
@@ -43,6 +42,13 @@ self.addEventListener('activate', (event) => {
 })
 
 // Fetch - Network first for API, cache first for assets
+//
+// A sincronização de mutações offline (fila/outbox) é feita pela própria
+// aba, em src/sync/engine.ts, disparada pelo evento 'online' do navegador —
+// não depende da Background Sync API (sem suporte no Safari/iOS, comum em
+// tablets de campo). O service worker cuida só do cache: deixar o "esqueleto"
+// do app abrir mesmo sem sinal, e responder chamadas de API já vistas com a
+// última resposta conhecida enquanto não há rede.
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
@@ -52,7 +58,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache successful API responses
           if (response.ok && request.method === 'GET') {
             const responseClone = response.clone()
             caches.open(CACHE_NAME).then((cache) => {
@@ -62,12 +67,8 @@ self.addEventListener('fetch', (event) => {
           return response
         })
         .catch(() => {
-          // Return cached response if offline
           return caches.match(request).then((cached) => {
-            if (cached) {
-              return cached
-            }
-            // Return offline indicator
+            if (cached) return cached
             return new Response(JSON.stringify({ offline: true }), {
               status: 503,
               headers: { 'Content-Type': 'application/json' }
@@ -111,65 +112,3 @@ self.addEventListener('fetch', (event) => {
     )
   }
 })
-
-// Background Sync - Retry failed POST/PUT/DELETE
-self.addEventListener('sync', (event) => {
-  if (event.tag === SYNC_TAG) {
-    event.waitUntil(syncPendingRequests())
-  }
-})
-
-async function syncPendingRequests() {
-  const db = await openPendingDB()
-  const pending = await getAllPending(db)
-
-  for (const item of pending) {
-    try {
-      const response = await fetch(item.url, {
-        method: item.method,
-        headers: item.headers,
-        body: item.body ? JSON.parse(item.body) : undefined
-      })
-
-      if (response.ok) {
-        await deletePending(db, item.id)
-      }
-    } catch (error) {
-      console.log('Sync error for', item.url, error)
-    }
-  }
-}
-
-function openPendingDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('inspec360-pending', 1)
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result
-      if (!db.objectStoreNames.contains('requests')) {
-        db.createObjectStore('requests', { keyPath: 'id', autoIncrement: true })
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
-
-function getAllPending(db) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['requests'], 'readonly')
-    const store = transaction.objectStore('requests')
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
-
-function deletePending(db, id) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['requests'], 'readwrite')
-    const store = transaction.objectStore('requests')
-    const request = store.delete(id)
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
-  })
-}

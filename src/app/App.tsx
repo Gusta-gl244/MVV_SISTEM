@@ -25,8 +25,9 @@ export default function App() {
   });
   const [backendReady, setBackendReady] = useState(false);
 
-  // Sincronizar dados periodicamente
-  usePeriodSync();
+  // Sincronizar dados periodicamente — só depois de autenticado, já que
+  // toda rota de sincronização exige um token válido.
+  usePeriodSync(!!user);
 
   useEffect(() => {
     loadFromBackend().finally(() => setBackendReady(true));

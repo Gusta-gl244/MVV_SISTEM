@@ -24,10 +24,13 @@ import {
   Cpu,
   HardDrive,
   Camera,
+  Clock,
 } from 'lucide-react';
 import { isUtmCoord, utmToLatLng } from '@/utils/coordinateUtils';
 import { parseDecimal } from '@/utils/numberFormat';
-import newLogo from '../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567-1.png';
+import * as api from '@/api/client';
+import inspec360Icon from '../../assets/brand/inspec360-icon-white.png';
+import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -36,7 +39,6 @@ import { Textarea } from './ui/textarea';
 import {
   getStore,
   generateId,
-  resetStore,
   getSeverities,
   addSeverity,
   updateSeverity,
@@ -62,7 +64,6 @@ import { DatabasesPanel } from './superadm/DatabasesPanel';
 import { OrdersManagementPanel } from './superadm/OrdersManagementPanel';
 import { PhotoGalleryPanel } from './PhotoGalleryPanel';
 import { BackupPanel } from './BackupPanel';
-import { useAutoBackup } from '@/hooks/useAutoBackup';
 
 interface SuperAdmAppProps {
   user: User;
@@ -99,9 +100,6 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [showBackupPanel, setShowBackupPanel] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
-
-  // Habilitar backups automáticos
-  useAutoBackup();
 
   // ── User form ──────────────────────────────────────────────────────────────
   const [showUserForm, setShowUserForm] = useState(false);
@@ -182,17 +180,11 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
 
   async function refresh() {
     const store = getStore();
-    // IMPORTANTE: a lista de usuários deve vir sempre do estado local
-    // (store.users), nunca de um refetch de /api/users aqui. addUser/
-    // updateUser/deleteUser já atualizam o blob local imediatamente e de
-    // forma confiável — mas só escrevem em /api/users quando a flag
-    // REQUIRE_BACKEND está ativa (desligada por padrão), então a tabela
-    // REST fica desatualizada em relação a ações do usuário. Um refresh()
-    // que sobrescrevesse a lista local com esse REST desatualizado logo
-    // após excluir/editar um usuário desfazia a ação na tela (regressão
-    // real: excluir um usuário "revertia sozinho"). A reconciliação inicial
-    // entre o blob local e /api/users já acontece em loadFromBackend(), no
-    // boot do app — então o blob local já chega aqui correto.
+    // A lista exibida vem sempre da cópia local (store.users) — ela já é
+    // mantida correta pelo motor de sincronização (src/sync/engine.ts):
+    // addUser/updateUser/deleteUser confirmam no servidor antes de
+    // atualizar aqui, e pulls periódicos trazem o que outros usuários
+    // criaram. Não há mais uma tabela REST separada e desatualizada.
     setUsers(store.users);
     setStructures(store.structures);
     setServiceOrders(store.serviceOrders);
@@ -213,39 +205,22 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
       .slice(0, 20);
     setActivityItems(activities);
 
-    if (!backendConnectedRef.current) return;
+  }
 
+  async function checkBackendConnection() {
     try {
-      // Apenas verifica conectividade — os resultados não substituem o
-      // estado local exibido (ver comentário acima em setUsers(store.users)).
-      await Promise.all([
-        backendStore.userStore.getAll(),
-        backendStore.structureStore.getAll(),
-        backendStore.componentStore.getAll(),
-        backendStore.serviceOrderStore.getAll(),
-      ]);
-    } catch (error) {
-      console.error('Falha ao carregar dados do backend:', error);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/health`, { signal: AbortSignal.timeout(4000) });
+      setBackendConnected(res.ok);
+    } catch {
       setBackendConnected(false);
-      showToast('Falha ao conectar com backend. Exibindo dados locais.');
     }
   }
 
   useEffect(() => {
-    let unsub: (() => void) | null = null;
     const init = async () => {
       try {
-        const available = await backendStore.syncManager.checkConnection();
-        setBackendConnected(available);
-        // Sempre carregar dados — se backend disponível, irá carregar remoto,
-        // caso contrário, a função refresh carrega os dados locais.
+        await checkBackendConnection();
         await refresh();
-
-        // Registrar listener para sincronizações futuras
-        unsub = backendStore.syncManager.onSync(() => {
-          refresh().catch((error) => console.error(error));
-          setBackendConnected(true);
-        });
       } catch (error) {
         console.error('Erro na inicialização de dados:', error);
         await refresh();
@@ -270,7 +245,6 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
     window.addEventListener('dataRefresh', onDataRefresh as EventListener);
 
     return () => {
-      if (unsub) unsub();
       window.removeEventListener('backend-sync-failed', onFail as EventListener);
       window.removeEventListener('backend-sync-success', onSuccess as EventListener);
       window.removeEventListener('dataRefresh', onDataRefresh as EventListener);
@@ -293,27 +267,6 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
     return <div style={{ padding: 16 }}>Carregando dados...</div>;
   }
 
-  async function handleCleanData() {
-    if (!backendConnected) {
-      if (!confirm('Backend offline. Deseja redefinir apenas o armazenamento local?')) return;
-      resetStore();
-      await refresh();
-      showToast('Dados locais redefinidos.');
-      return;
-    }
-
-    const secret = prompt('Digite a chave de administrador para limpar dados do backend:');
-    if (!secret) return;
-
-    try {
-      await backendStore.adminStore.cleanData(secret);
-      await refresh();
-      showToast('Limpeza de dados do backend concluída com sucesso.');
-    } catch (error) {
-      console.error(error);
-      showToast('Falha ao limpar dados no backend. Verifique a chave e a conexão.');
-    }
-  }
 
   // ── User handlers ──────────────────────────────────────────────────────────
   function openAddUser() {
@@ -324,38 +277,49 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
 
   function openEditUser(u: SystemUser) {
     setEditingUser(u);
-    setUserForm({ name: u.name, email: u.email, password: u.password, role: u.role, status: u.status });
+    // Senha começa em branco: deixar em branco = manter a senha atual.
+    // Nunca pré-preenchemos com a senha real (nem existe mais no frontend
+    // desde que passou a ser armazenada como hash só no servidor).
+    setUserForm({ name: u.name, email: u.email, password: '', role: u.role, status: u.status });
     setShowUserForm(true);
   }
 
   async function handleSaveUser() {
-    if (!userForm.name || !userForm.email || !userForm.password) {
+    if (!userForm.name || !userForm.email || (!editingUser && !userForm.password)) {
       showToast('Preencha todos os campos obrigatórios.');
       return;
     }
 
-    if (editingUser) {
-      updateUser({ ...editingUser, ...userForm });
-      showToast('Usuário atualizado com sucesso!');
-    } else {
-      addUser({ id: generateId(), ...userForm, lastLogin: '—' });
-      showToast('Usuário criado com sucesso!');
+    try {
+      if (editingUser) {
+        const { password, ...rest } = userForm;
+        await updateUser({ ...editingUser, ...rest, ...(password ? { password } : {}) });
+        showToast('Usuário atualizado com sucesso!');
+      } else {
+        await addUser({ id: generateId(), ...userForm, lastLogin: '—' });
+        showToast('Usuário criado com sucesso!');
+      }
+      refresh();
+      setShowUserForm(false);
+    } catch (error) {
+      showToast(`Falha ao salvar usuário: ${error instanceof Error ? error.message : error}`);
     }
-
-    refresh();
-    setShowUserForm(false);
   }
 
   async function handleDeleteUser(u: SystemUser) {
-    deleteUser(u.id);
-    refresh();
-    setConfirmDeleteUser(null);
-    showToast('Usuário excluído.');
+    try {
+      await deleteUser(u.id);
+      refresh();
+      setConfirmDeleteUser(null);
+      showToast('Usuário excluído.');
+    } catch (error) {
+      showToast(`Falha ao excluir usuário: ${error instanceof Error ? error.message : error}`);
+    }
   }
 
   async function handleToggleUserStatus(u: SystemUser) {
     const nextStatus = u.status === 'active' ? 'inactive' : 'active';
-    updateUser({ ...u, status: nextStatus });
+    await updateUser({ ...u, status: nextStatus });
     refresh();
     showToast(`Usuário ${nextStatus === 'active' ? 'ativado' : 'desativado'}.`);
   }
@@ -594,9 +558,14 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
       {/* Header */}
       <div className="sticky top-0 z-10 shadow-md" style={{ backgroundColor: '#193A2A' }}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img src={newLogo} alt="Logo" className="h-11 w-auto" />
-            <div className="text-white ml-1">
+          <div className="flex items-center gap-3">
+            <img src={inspec360Icon} alt="" className="h-9 w-9" />
+            <span className="text-white text-base tracking-wide leading-none">
+              INSPEC<span style={{ color: '#AA8933' }}>360</span>
+            </span>
+            <div className="w-px h-7 bg-white/15 hidden sm:block" />
+            <img src={grupoLogo} alt="Mineração Vale Verde · BNMC" className="h-7 w-auto rounded hidden sm:block" />
+            <div className="text-white ml-2">
               <div className="text-sm opacity-90">Painel Administrativo</div>
               <div>{user.name}</div>
             </div>
@@ -1051,7 +1020,7 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
 
           {/* ── System Status ─────────────────────────────────────────────── */}
           <TabsContent value="status" className="mt-0">
-            <SystemStatusPanel structures={structures} users={users} orderCount={orderCount} checklistComponents={checklistComponents} />
+            <SystemStatusPanel />
           </TabsContent>
 
           {/* ── Settings ──────────────────────────────────────────────────── */}
@@ -1122,18 +1091,6 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
                       <span className="font-medium" style={{ color: '#193A2A' }}>{item.value}</span>
                     </div>
                   ))}
-                </div>
-                <div className="pt-2">
-                  <h3 className="font-medium mb-2 text-red-600">Zona de Perigo</h3>
-                  <p className="text-xs text-gray-500 mb-3">Redefinir todos os dados para o estado inicial (dados de demonstração).</p>
-                  <Button
-                    variant="outline"
-                    className="text-red-600 border-red-200 hover:bg-red-50 w-full"
-                    onClick={handleCleanData}
-                  >
-                    <AlertTriangle className="w-4 h-4 mr-2" />
-                    Redefinir Dados do Sistema
-                  </Button>
                 </div>
               </Card>
             </div>
@@ -1587,152 +1544,138 @@ function ConfirmDialog({
 
 // ── System Status Panel ────────────────────────────────────────────────────────
 
-function SystemStatusPanel({
-  structures,
-  users,
-  orderCount,
-  checklistComponents,
-}: {
-  structures: { id: string }[];
-  users: { id: string; status: string }[];
-  orderCount: number;
-  checklistComponents: { id: string }[];
-}) {
-  const [refreshed, setRefreshed] = useState(new Date());
+interface DiagnosticsData {
+  database: { connected: boolean };
+  server: { uptimeSeconds: number; nodeVersion: string };
+  counts: Record<string, number>;
+  backupSchedule: { enabled: boolean; intervalHours?: number; retentionCount?: number };
+  lastBackup: { id: string; createdAt: string; kind: string; sizeBytes: number } | null;
+  timestamp: string;
+}
 
-  function checkStorage() {
+function formatUptime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}min`;
+  return `${m}min`;
+}
+
+/**
+ * Painel de status real — cada número aqui vem de uma consulta ao Postgres
+ * no momento em que a tela é aberta (GET /api/diagnostics), não de
+ * suposições fixas. Se o backend estiver fora do ar, o painel mostra isso
+ * de verdade em vez de continuar exibindo "Operacional".
+ */
+function SystemStatusPanel() {
+  const [data, setData] = useState<DiagnosticsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshed, setRefreshed] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
     try {
-      localStorage.setItem('_ping', '1');
-      localStorage.removeItem('_ping');
-      return true;
-    } catch { return false; }
+      const result = await api.diagnosticsAPI.get();
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setData(null);
+      setError(err instanceof Error ? err.message : 'Backend inacessível');
+    } finally {
+      setRefreshed(new Date());
+      setLoading(false);
+    }
   }
 
-  const storageOk = checkStorage();
-  const storageSize = (() => {
-    try {
-      const raw = localStorage.getItem('inspec360_v22_data');
-      return raw ? (new Blob([raw]).size / 1024).toFixed(1) + ' KB' : '0 KB';
-    } catch { return 'N/A'; }
-  })();
+  useEffect(() => { load(); }, []);
 
-  const modules = [
-    { name: 'localStorage', status: storageOk ? 'ok' : 'error', detail: `Tamanho: ${storageSize}`, icon: <HardDrive className="w-5 h-5" /> },
-    { name: 'Autenticação', status: users.length > 0 ? 'ok' : 'warning', detail: `${users.filter((u: {status:string}) => u.status==='active').length} usuários ativos`, icon: <Shield className="w-5 h-5" /> },
-    { name: 'Motor de Inspeção', status: checklistComponents.length > 0 ? 'ok' : 'warning', detail: `${checklistComponents.length} componentes carregados`, icon: <ListChecks className="w-5 h-5" /> },
-    { name: 'Gestão de Estruturas', status: structures.length > 0 ? 'ok' : 'warning', detail: `${structures.length} estruturas no banco`, icon: <Database className="w-5 h-5" /> },
-    { name: 'Ordens de Serviço', status: 'ok', detail: `${orderCount} ordens no sistema`, icon: <ClipboardList className="w-5 h-5" /> },
-    { name: 'Modo Offline', status: 'ok', detail: 'Todos os dados em localStorage', icon: <Cpu className="w-5 h-5" /> },
-  ];
-
-  const statusConfig: Record<string, { color: string; bg: string; label: string; dot: string }> = {
-    ok: { color: '#16a34a', bg: '#f0fdf4', label: 'Operacional', dot: 'bg-green-500' },
-    warning: { color: '#AA8933', bg: '#fff8e1', label: 'Atenção', dot: 'bg-amber-500' },
-    error: { color: '#dc2626', bg: '#fef2f2', label: 'Falha', dot: 'bg-red-500' },
-  };
-
-  const allOk = modules.every(m => m.status === 'ok');
-  const hasWarning = modules.some(m => m.status === 'warning');
+  const connected = data?.database.connected ?? false;
 
   return (
     <div className="space-y-6">
-      {/* Overall status */}
       <Card className="p-6">
         <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center ${allOk ? 'bg-green-100' : hasWarning ? 'bg-amber-100' : 'bg-red-100'}`}>
-            <div className={`w-8 h-8 rounded-full animate-pulse ${allOk ? 'bg-green-500' : hasWarning ? 'bg-amber-500' : 'bg-red-500'}`} />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center ${connected ? 'bg-green-100' : 'bg-red-100'}`}>
+            <div className={`w-8 h-8 rounded-full ${loading ? 'animate-pulse' : ''} ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
           </div>
           <div>
             <h2 className="text-xl" style={{ color: '#193A2A' }}>
-              {allOk ? '✅ Sistema Operacional' : hasWarning ? '⚠️ Sistema com Alertas' : '🔴 Sistema com Falhas'}
+              {loading ? 'Verificando...' : connected ? '✅ Backend e banco conectados' : '🔴 Backend inacessível'}
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Última verificação: {refreshed.toLocaleString('pt-BR')}
+              {error ? `Erro: ${error} — ` : ''}Última verificação: {refreshed.toLocaleString('pt-BR')}
             </p>
           </div>
-          <Button variant="outline" size="sm" className="ml-auto" onClick={() => setRefreshed(new Date())}>
-            <RefreshCw className="w-4 h-4 mr-2" />Verificar
+          <Button variant="outline" size="sm" className="ml-auto" onClick={load} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />Verificar
           </Button>
         </div>
       </Card>
 
-      {/* Module status grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {modules.map((mod) => {
-          const cfg = statusConfig[mod.status];
-          return (
-            <Card key={mod.name} className="p-5">
+      {data && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card className="p-5">
               <div className="flex items-start gap-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
-                  {mod.icon}
+                <div className="p-2 rounded-lg bg-green-50 text-green-600"><Database className="w-5 h-5" /></div>
+                <div>
+                  <div className="text-sm" style={{ color: '#193A2A' }}>Banco de dados (Postgres)</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Conectado — servidor no ar há {formatUptime(data.server.uptimeSeconds)}</div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm" style={{ color: '#193A2A' }}>{mod.name}</span>
-                    <span className={`w-2 h-2 rounded-full ${cfg.dot} shrink-0`} />
-                  </div>
-                  <div className="text-xs text-gray-500 mt-0.5">{mod.detail}</div>
-                  <div className="text-xs mt-1 px-1.5 py-0.5 rounded inline-block" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
-                    {cfg.label}
+              </div>
+            </Card>
+            <Card className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: data.backupSchedule.enabled ? '#f0fdf4' : '#fff8e1', color: data.backupSchedule.enabled ? '#16a34a' : '#AA8933' }}>
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm" style={{ color: '#193A2A' }}>Backup automático</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {data.backupSchedule.enabled
+                      ? `Ativo — a cada ${data.backupSchedule.intervalHours}h, mantendo ${data.backupSchedule.retentionCount} backups`
+                      : 'Desativado — configure em Backup → Automático'}
                   </div>
                 </div>
               </div>
             </Card>
-          );
-        })}
-      </div>
-
-      {/* Process flow */}
-      <Card className="p-6">
-        <h3 className="text-base mb-4" style={{ color: '#193A2A' }}>Fluxo do Sistema – Visão de Processos</h3>
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { step: '1', label: 'Login/Auth', status: 'ok' },
-            { step: '2', label: 'Supervisor cria Ordem', status: 'ok' },
-            { step: '3', label: 'Técnico recebe Tarefa', status: 'ok' },
-            { step: '4', label: 'Executa Inspeção', status: 'ok' },
-            { step: '5', label: 'Registra Anomalias', status: 'ok' },
-            { step: '6', label: 'Conclui e Salva', status: 'ok' },
-            { step: '7', label: 'Supervisor Visualiza', status: 'ok' },
-            { step: '8', label: 'Relatório/Export', status: 'ok' },
-          ].map((step, i, arr) => (
-            <div key={step.step} className="flex items-center gap-2">
-              <div className="flex flex-col items-center">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs shrink-0" style={{ backgroundColor: '#193A2A' }}>
-                  {step.step}
+            <Card className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-blue-50 text-blue-600"><Clock className="w-5 h-5" /></div>
+                <div>
+                  <div className="text-sm" style={{ color: '#193A2A' }}>Último backup</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {data.lastBackup
+                      ? `${new Date(data.lastBackup.createdAt).toLocaleString('pt-BR')} (${(data.lastBackup.sizeBytes / 1024).toFixed(0)} KB, ${data.lastBackup.kind})`
+                      : 'Nenhum backup gerado ainda'}
+                  </div>
                 </div>
-                <div className="text-[10px] text-gray-600 text-center mt-1 max-w-[60px] leading-tight">{step.label}</div>
               </div>
-              {i < arr.length - 1 && (
-                <div className="w-6 h-0.5 mb-4" style={{ backgroundColor: '#AA8933' }} />
-              )}
-            </div>
-          ))}
-        </div>
-      </Card>
+            </Card>
+          </div>
 
-      {/* Data integrity */}
-      <Card className="p-6">
-        <h3 className="text-base mb-4" style={{ color: '#193A2A' }}>Integridade dos Dados</h3>
-        <div className="space-y-2">
-          {[
-            { label: 'Banco de Usuários', count: users.length, ok: users.length > 0 },
-            { label: 'Banco de Estruturas', count: structures.length, ok: structures.length > 0 },
-            { label: 'Ordens de Serviço', count: orderCount, ok: true },
-            { label: 'Componentes de Inspeção', count: checklistComponents.length, ok: checklistComponents.length > 0 },
-          ].map((item) => (
-            <div key={item.label} className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: item.ok ? '#f0fdf4' : '#fef2f2' }}>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${item.ok ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-sm">{item.label}</span>
-              </div>
-              <span className="text-sm" style={{ color: item.ok ? '#16a34a' : '#dc2626' }}>
-                {item.count} registro(s) {item.ok ? '✓' : '⚠'}
-              </span>
+          <Card className="p-6">
+            <h3 className="text-base mb-4" style={{ color: '#193A2A' }}>Contagens reais no banco (servidor)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Usuários', value: data.counts.users },
+                { label: 'Estruturas', value: data.counts.structures },
+                { label: 'Componentes', value: data.counts.componentRules },
+                { label: 'Severidades', value: data.counts.severities },
+                { label: 'Ordens de Serviço', value: data.counts.serviceOrders },
+                { label: 'Inspeções', value: data.counts.inspectionRecords },
+                { label: 'Execuções', value: data.counts.executionRecords },
+                { label: 'Emendas', value: data.counts.splices },
+              ].map((item) => (
+                <div key={item.label} className="p-3 rounded-lg bg-gray-50">
+                  <div className="text-xl font-semibold" style={{ color: '#193A2A' }}>{item.value}</div>
+                  <div className="text-xs text-gray-500">{item.label}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </Card>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

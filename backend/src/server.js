@@ -5,17 +5,21 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { initDb, closeDb } from './database/postgres-connection.js';
 import { initializeDatabase } from './database/init-postgres.js';
-import * as queries from './database/queries-postgres.js';
+import { seedTestAccountsIfEmpty } from './database/seed.js';
+import { initBackupScheduler } from './scheduler/backupScheduler.js';
+import { requireAuth } from './middleware/auth.js';
 
+import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
 import structuresRouter from './routes/structures.js';
 import componentsRouter from './routes/components.js';
 import serviceOrdersRouter from './routes/serviceOrders.js';
 import inspectionsRouter from './routes/inspections.js';
 import executionsRouter from './routes/executions.js';
-import photosRouter from './routes/photos.js';
-import stateRouter from './routes/state.js';
-import adminRouter from './routes/admin.js';
+import syncRouter from './routes/sync.js';
+import backupsRouter from './routes/backups.js';
+import referenceRouter from './routes/reference.js';
+import diagnosticsRouter from './routes/diagnostics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -30,111 +34,45 @@ app.use(cors({
   origin: CORS_ORIGIN,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Servir arquivos estáticos do public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Servir frontend estático (build do Vite)
 const distPath = path.join(__dirname, '../../dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROTAS DA API
+// ROTAS PÚBLICAS (sem autenticação)
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use('/api/users', usersRouter);
-app.use('/api/structures', structuresRouter);
-app.use('/api/components', componentsRouter);
-app.use('/api/service-orders', serviceOrdersRouter);
-app.use('/api/inspections', inspectionsRouter);
-app.use('/api/executions', executionsRouter);
-app.use('/api/photos', photosRouter);
-app.use('/api/state', stateRouter);
-app.use('/api/admin', adminRouter);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HEALTH CHECK
-// ─────────────────────────────────────────────────────────────────────────────
+app.use('/api/auth', authRouter);
 
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    database: 'postgresql',
-    timestamp: new Date().toISOString(),
-    version: '2.2.0',
-    uptime: process.uptime(),
-    memory: process.memoryUsage()
-  });
+  res.json({ status: 'ok', database: 'postgresql', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DIAGNÓSTICO - Contagem de Dados
+// ROTAS AUTENTICADAS
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.get('/api/diagnostics/stats', async (req, res) => {
-  try {
-    const stats = {
-      usuarios: (await queries.getAllUsers()).length,
-      estruturas: (await queries.getAllStructures()).length,
-      componentes: (await queries.getAllComponents()).length,
-      ordensServico: (await queries.getAllServiceOrders()).length,
-      inspecoes: (await queries.getAllInspections()).length,
-      anomalias: (await queries.getAllAnomalies()).length,
-      fotos: (await queries.getAllPhotos()).length,
-      execucoes: (await queries.getAllExecutions()).length
-    };
-    
-    res.json({
-      status: 'ok',
-      database: 'postgresql',
-      stats,
-      total: Object.values(stats).reduce((a, b) => a + b, 0),
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Erro ao gerar estatísticas:', error.message);
-    res.status(500).json({
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
+app.use('/api/users', requireAuth, usersRouter);
+app.use('/api/structures', requireAuth, structuresRouter);
+app.use('/api/components', requireAuth, componentsRouter);
+app.use('/api/service-orders', requireAuth, serviceOrdersRouter);
+app.use('/api/inspections', requireAuth, inspectionsRouter);
+app.use('/api/executions', requireAuth, executionsRouter);
+app.use('/api/sync', requireAuth, syncRouter);
+app.use('/api/backups', requireAuth, backupsRouter);
+app.use('/api/reference', requireAuth, referenceRouter);
+app.use('/api/diagnostics', requireAuth, diagnosticsRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DIAGNÓSTICO - Teste de Conectividade
-// ─────────────────────────────────────────────────────────────────────────────
-
-app.get('/api/diagnostics/connection', async (req, res) => {
-  try {
-    // Testar conexão com uma query simples
-    const result = await queries.getAllUsers();
-    res.json({
-      status: 'ok',
-      database: 'postgresql',
-      connection: 'success',
-      sample: result.length > 0 ? `${result.length} usuários no banco` : 'Banco vazio (OK)',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Erro de conexão:', error.message);
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      database: 'postgresql',
-      connection: 'failed',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SPA FALLBACK - Redirecionar todas as rotas não-API para index.html
+// SPA FALLBACK
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('*', (req, res) => {
@@ -152,50 +90,31 @@ app.get('*', (req, res) => {
 
 async function startServer() {
   try {
+    if (!process.env.DATABASE_URL) {
+      const { ensureLocalDatabase } = await import('./database/dev-bootstrap.js');
+      await ensureLocalDatabase();
+    }
+
     console.log('🔧 Inicializando banco de dados PostgreSQL...');
+    await initDb();
     await initializeDatabase();
+    await seedTestAccountsIfEmpty();
+    await initBackupScheduler();
     console.log('✅ Banco de dados inicializado com sucesso!');
-    
-    const server = app.listen(PORT, () => {
+
+    app.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║          🚀 INSPEC360 v2.2 - Backend Operacional           ║
+║          🚀 INSPEC360 — Backend Operacional                 ║
 ╚════════════════════════════════════════════════════════════╝
 
 📡 Servidor em: http://localhost:${PORT}
 🔧 API em: http://localhost:${PORT}/api
 🏥 Health Check: http://localhost:${PORT}/api/health
-📊 Estatísticas: http://localhost:${PORT}/api/diagnostics/stats
-🔍 Teste Conexão: http://localhost:${PORT}/api/diagnostics/connection
-🏞️  Imagens: http://localhost:${PORT}/images/inspections
-✅ Banco: PostgreSQL (Remoto)
-🔒 CORS: ${CORS_ORIGIN}
-
-Rotas da API disponíveis:
-  ├─ POST   /api/users              → Criar usuário
-  ├─ POST   /api/users/login        → Login
-  ├─ GET    /api/users              → Listar usuários
-  ├─ GET    /api/structures         → Listar estruturas
-  ├─ POST   /api/structures         → Criar estrutura
-  ├─ GET    /api/components         → Listar componentes
-  ├─ GET    /api/service-orders     → Listar ordens
-  ├─ POST   /api/service-orders     → Criar ordem
-  ├─ GET    /api/inspections        → Listar inspeções
-  ├─ POST   /api/inspections        → Criar inspeção
-  ├─ POST   /api/photos/upload      → Upload de foto
-  ├─ GET    /api/executions         → Listar execuções
-  └─ POST   /api/executions         → Criar execução
 
 Pressione Ctrl+C para parar
-
-Variáveis de ambiente:
-  - PORT: ${PORT}
-  - CORS_ORIGIN: ${CORS_ORIGIN}
-  - DATABASE_URL: ${process.env.DATABASE_URL ? '✅ Configurada' : '❌ NÃO CONFIGURADA'}
       `);
     });
-    
-    return server;
   } catch (error) {
     console.error('❌ ERRO ao iniciar servidor:', error.message);
     console.error('📝 Stack:', error.stack);
@@ -203,20 +122,20 @@ Variáveis de ambiente:
   }
 }
 
-startServer().catch(err => {
-  console.error('❌ Erro fatal ao iniciar servidor:', err);
-  process.exit(1);
-});
+startServer();
 
-// Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n📴 Encerrando servidor...');
+  const { stopLocalDatabase } = await import('./database/dev-bootstrap.js');
+  await stopLocalDatabase().catch(() => {});
   closeDb();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n📴 Encerrando servidor...');
+  const { stopLocalDatabase } = await import('./database/dev-bootstrap.js');
+  await stopLocalDatabase().catch(() => {});
   closeDb();
   process.exit(0);
 });

@@ -1,6 +1,10 @@
 {
-  "version": "2.2.20260721",
-  "buildDate": "2026-07-21T15:40:00Z",
-  "features": ["backend-first-sync", "require-backend-mode", "initial-sync-before-render"],
+  "version": "2.1.20260818001",
+  "buildDate": "2026-08-18T05:33:21.095Z",
+  "features": [
+    "backend-first-sync",
+    "require-backend-mode",
+    "initial-sync-before-render"
+  ],
   "lastUpdate": "Force redeploy: bump version to trigger rebuild and apply storage fixes"
 }

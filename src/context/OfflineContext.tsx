@@ -76,15 +76,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
   // Monitor online/offline
   useEffect(() => {
+    // A sincronização em si (drenar mutações pendentes + buscar o que há de
+    // novo) é disparada pelo próprio motor em src/sync/engine.ts, que já
+    // escuta o evento 'online' diretamente — não depende da Background Sync
+    // API do navegador (sem suporte no Safari/iOS, comum em tablets de campo).
     const handleOnline = () => {
       setIsOnline(true)
       offlineStorage.setOfflineState(true).catch(console.error)
-      // Trigger sync
-      if ('serviceWorker' in navigator && 'SyncManager' in window) {
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.sync.register('inspec360-sync').catch(console.error)
-        })
-      }
     }
 
     const handleOffline = () => {
@@ -101,15 +99,17 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Check pending requests periodically
+  // Conta as mutações realmente pendentes no outbox do motor de
+  // sincronização (src/sync/engine.ts) — é a fila que de fato existe hoje;
+  // a antiga store 'pending-requests' nunca chegava a ser escrita por
+  // nenhum fluxo real, então o indicador sempre mostrava zero.
   useEffect(() => {
     const checkPending = async () => {
       try {
-        await offlineStorage.init()
-        const pending = await offlineStorage.getPendingRequests()
+        const pending = await offlineStorage.getOutbox()
         setPendingCount(pending.length)
       } catch (error) {
-        console.error('Error checking pending requests:', error)
+        console.error('Error checking pending mutations:', error)
       }
     }
 

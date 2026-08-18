@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { latLngToUtm } from '@/utils/coordinateUtils';
 import { parseDecimal } from '@/utils/numberFormat';
-import newLogo from '../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567-1.png';
+import inspec360Icon from '../../assets/brand/inspec360-icon-white.png';
+import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
@@ -30,6 +31,7 @@ import {
   addStructure,
   addServiceOrder,
   generateId,
+  generateOrderId,
 } from '../data/store';
 import type { Structure, ServiceOrder, StructureType, InspectionType } from '../data/types';
 import { INSPECTION_TYPES } from '../data/types';
@@ -237,7 +239,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
     let createdCount = 0;
     structuresToProcess.forEach((structureId) => {
       const newOrder: ServiceOrder = {
-        id: `os${generateId()}`,
+        id: generateOrderId(),
         type: orderForm.type,
         om: orderForm.om.trim(),
         inspectionType: orderForm.type === 'inspecao' ? orderForm.inspectionType : undefined,
@@ -332,6 +334,38 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
     })).filter((t) => t.count > 0),
     avgDurationDays,
   };
+
+  // ── Visão estratégica: backlog por idade, estruturas críticas em risco,
+  // cumprimento de prazo e carga por técnico — padrão de dashboards de
+  // gestão de manutenção/inspeção de ativos (backlog aging + SLA compliance
+  // + criticidade em primeiro lugar, não só contagem bruta).
+  const now = Date.now();
+  const daysOverdue = (o: ServiceOrder) => Math.floor((now - new Date(o.deadline).getTime()) / 86400000);
+  const overdueOrders = dashboardOrders.filter((o) => o.status !== 'concluido' && new Date(o.deadline).getTime() < now);
+  const agingBuckets = [
+    { label: '1–7 dias', count: overdueOrders.filter((o) => daysOverdue(o) <= 7).length, color: '#eab308' },
+    { label: '8–14 dias', count: overdueOrders.filter((o) => daysOverdue(o) > 7 && daysOverdue(o) <= 14).length, color: '#f97316' },
+    { label: '15–30 dias', count: overdueOrders.filter((o) => daysOverdue(o) > 14 && daysOverdue(o) <= 30).length, color: '#dc2626' },
+    { label: '30+ dias', count: overdueOrders.filter((o) => daysOverdue(o) > 30).length, color: '#7f1d1d' },
+  ];
+  const agingTotal = agingBuckets.reduce((s, b) => s + b.count, 0);
+
+  const criticalAtRisk = structures.filter((s) => {
+    const st = computeStructureStatus(s, orders);
+    return s.estruturaCritica && (st === 'anomalia' || st === 'atrasado' || st === 'pendente');
+  });
+
+  const completedOnTime = completedWithDuration.filter((o) => new Date(o.completedAt!).getTime() <= new Date(o.deadline).getTime()).length;
+  const slaComplianceRate = completedWithDuration.length > 0 ? Math.round((completedOnTime / completedWithDuration.length) * 100) : null;
+
+  const technicianWorkload = (() => {
+    const openOrders = dashboardOrders.filter((o) => o.status !== 'concluido');
+    const byTech = new Map<string, number>();
+    openOrders.forEach((o) => byTech.set(o.technicianId, (byTech.get(o.technicianId) || 0) + 1));
+    return [...byTech.entries()]
+      .map(([id, count]) => ({ id, name: getTechnicianName(id), count }))
+      .sort((a, b) => b.count - a.count);
+  })();
 
   const filteredOrders = orders.filter((o) => {
     const s = getStructureName(o.structureId).toLowerCase();
@@ -523,8 +557,13 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
       {/* Header */}
       <div className="sticky top-0 z-10 shadow-md" style={{ backgroundColor: '#193A2A' }}>
         <div className="flex items-center justify-between px-4 py-3 max-w-3xl mx-auto">
-          <div className="flex items-center gap-2">
-            <img src={newLogo} alt="Logo" className="h-9 w-auto" />
+          <div className="flex items-center gap-2.5">
+            <img src={inspec360Icon} alt="" className="h-8 w-8" />
+            <span className="text-white text-[15px] tracking-wide leading-none">
+              INSPEC<span style={{ color: '#AA8933' }}>360</span>
+            </span>
+            <div className="w-px h-6 bg-white/15 hidden sm:block" />
+            <img src={grupoLogo} alt="Mineração Vale Verde · BNMC" className="h-6 w-auto rounded hidden sm:block" />
           </div>
           <div className="flex-1 px-3">
             <div className="text-white text-xs opacity-75">Supervisor</div>
@@ -622,7 +661,66 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
               </div>
             </Card>
 
+            {/* Visão estratégica */}
+            {(agingTotal > 0 || criticalAtRisk.length > 0) && (
+              <Card className="p-4 shadow-sm border-l-4" style={{ borderLeftColor: '#dc2626' }}>
+                <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-3">Prioridade — precisa de atenção agora</h3>
+
+                {criticalAtRisk.length > 0 && (
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-red-700 mb-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {criticalAtRisk.length} estrutura{criticalAtRisk.length !== 1 ? 's' : ''} crítica{criticalAtRisk.length !== 1 ? 's' : ''} pendente{criticalAtRisk.length !== 1 ? 's' : ''}/com anomalia
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {criticalAtRisk.slice(0, 8).map((s) => (
+                        <span key={s.id} className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">{s.name}</span>
+                      ))}
+                      {criticalAtRisk.length > 8 && <span className="text-[10px] text-gray-400">+{criticalAtRisk.length - 8}</span>}
+                    </div>
+                  </div>
+                )}
+
+                {agingTotal > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1.5">{agingTotal} ordem{agingTotal !== 1 ? 's' : ''} atrasada{agingTotal !== 1 ? 's' : ''}, por tempo de atraso</div>
+                    <div className="flex h-2.5 rounded-full overflow-hidden bg-gray-100 mb-1.5">
+                      {agingBuckets.filter((b) => b.count > 0).map((b) => (
+                        <div key={b.label} style={{ width: `${(b.count / agingTotal) * 100}%`, backgroundColor: b.color }} title={`${b.label}: ${b.count}`} />
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {agingBuckets.map((b) => (
+                        <div key={b.label} className="flex items-center gap-1 text-[10px] text-gray-500">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color }} />
+                          {b.label}: {b.count}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
+              {slaComplianceRate !== null && (
+                <Card className="p-4 shadow-sm col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Cumprimento de Prazo (SLA)</span>
+                    <span className="text-lg" style={{ color: slaComplianceRate >= 80 ? '#16a34a' : slaComplianceRate >= 50 ? '#AA8933' : '#dc2626' }}>
+                      {slaComplianceRate}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${slaComplianceRate}%`, backgroundColor: slaComplianceRate >= 80 ? '#16a34a' : slaComplianceRate >= 50 ? '#AA8933' : '#dc2626' }}
+                    />
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-1">{completedOnTime} de {completedWithDuration.length} ordens concluídas dentro do prazo</div>
+                </Card>
+              )}
+
               {[
                 { label: 'Estruturas', value: stats.totalStructures, icon: Building2, color: '#193A2A' },
                 { label: 'Em Andamento', value: stats.emAndamento, icon: Clock, color: '#AA8933' },
@@ -680,6 +778,27 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300" />
+                </div>
+              </Card>
+            )}
+
+            {/* Technician workload */}
+            {technicianWorkload.length > 0 && (
+              <Card className="p-4 shadow-sm">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-2">Carga de Trabalho por Técnico</h3>
+                <div className="space-y-2">
+                  {technicianWorkload.map((t) => {
+                    const max = technicianWorkload[0].count || 1;
+                    return (
+                      <div key={t.id} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 w-24 truncate shrink-0">{t.name}</span>
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(t.count / max) * 100}%`, backgroundColor: '#AA8933' }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-6 text-right shrink-0">{t.count}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </Card>
             )}

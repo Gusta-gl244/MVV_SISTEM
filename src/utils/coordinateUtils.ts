@@ -1,4 +1,4 @@
-const A = 6378137.0;
+﻿const A = 6378137.0;
 const F = 1 / 298.257223563;
 const K0 = 0.9996;
 const E2 = 2 * F - F * F;
@@ -7,7 +7,10 @@ const E_P2 = E2 / (1 - E2);
 const E4 = E2 * E2;
 const E6 = E4 * E2;
 
-const UTM_ZONE_23_S = 23;
+// Coordenadas de campo em UTM 24S / SIRGAS2000. Os parâmetros de elipsoide
+// (A, F) abaixo já são os do WGS84, que coincidem com o GRS80 do SIRGAS2000
+// na precisão usada aqui — só a zona precisava ser corrigida.
+const UTM_ZONE_24_S = 24;
 const UTM_HEM_SOUTH = true;
 
 function toRad(deg: number): number {
@@ -25,7 +28,7 @@ function utmCentralMeridian(zone: number): number {
 export function utmToLatLng(
   easting: number,
   northing: number,
-  zone: number = UTM_ZONE_23_S,
+  zone: number = UTM_ZONE_24_S,
   southernHemisphere: boolean = UTM_HEM_SOUTH
 ): { lat: number; lng: number } {
   const x = easting - 500000.0;
@@ -89,7 +92,7 @@ export function utmToLatLng(
 export function latLngToUtm(
   lat: number,
   lng: number,
-  zone: number = UTM_ZONE_23_S,
+  zone: number = UTM_ZONE_24_S,
   southernHemisphere: boolean = UTM_HEM_SOUTH
 ): { x: number; y: number; zone: number; hemisphere: 'N' | 'S' } {
   const latRad = toRad(lat);
@@ -145,7 +148,7 @@ export function isUtmCoord(x: number, y: number): boolean {
 }
 
 export function getUtmZone(): number {
-  return UTM_ZONE_23_S;
+  return UTM_ZONE_24_S;
 }
 
 export function isSouthernHemisphere(): boolean {

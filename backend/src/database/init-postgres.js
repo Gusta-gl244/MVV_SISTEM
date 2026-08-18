@@ -1,32 +1,39 @@
 import { initDb, runSQL } from './postgres-connection.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA
+//
+// Cada entidade de topo é uma tabela real com colunas de sincronização
+// ("updatedAt", "deletedAt" como tombstone de exclusão, "deviceId" para saber
+// se o registro nasceu offline). Listas aninhadas que o frontend sempre lê/
+// grava como uma unidade só (componentes inspecionados, histórico de pausas,
+// log de atividade) viram colunas JSONB em vez de tabelas filhas — evita
+// reescrever lógica de join que no schema antigo nem era usada corretamente.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function initializeDatabase() {
   console.log('🔧 Inicializando banco PostgreSQL...');
-  
+
   await initDb();
   console.log('✅ Conexão PostgreSQL estabelecida');
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. TABELA DE USUÁRIOS
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
+      "passwordHash" TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('tecnico', 'supervisor', 'superadm')),
-      status TEXT NOT NULL CHECK(status IN ('active', 'inactive')),
-      "lastLogin" TEXT,
-      avatar TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
       phone TEXT,
-      "createdAt" TEXT NOT NULL
+      avatar TEXT,
+      "lastLogin" TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
     )
   `);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 2. TABELA DE ESTRUTURAS
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
     CREATE TABLE IF NOT EXISTS structures (
       id TEXT PRIMARY KEY,
@@ -37,218 +44,199 @@ export async function initializeDatabase() {
       "coordY" REAL NOT NULL,
       lat REAL,
       lng REAL,
-      progressiva REAL NOT NULL,
-      deflexao REAL,
       "alturaUtil" REAL,
       "vanFrente" REAL,
       "cotaCentro" REAL,
+      progressiva REAL NOT NULL DEFAULT 0,
+      deflexao REAL,
+      "deflexaoTexto" TEXT,
+      travessia TEXT,
       lt TEXT NOT NULL,
       voltage TEXT NOT NULL,
       "cadeiaCondutor" TEXT,
       "qtdCadeias" INTEGER,
       "cadeiaParaRaios" TEXT,
       "qtdCadeiasPR" INTEGER,
-      "estruturaCritica" INTEGER DEFAULT 0,
-      status TEXT NOT NULL CHECK(status IN ('pendente', 'em-andamento', 'concluido', 'anomalia', 'atrasado')),
+      "estruturaCritica" BOOLEAN DEFAULT FALSE,
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'em-andamento', 'concluido', 'anomalia', 'atrasado')),
       observation TEXT,
-      "createdBy" TEXT NOT NULL,
+      "createdBy" TEXT,
       "createdAt" TEXT NOT NULL,
-      FOREIGN KEY("createdBy") REFERENCES users(id)
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT,
+      "deviceId" TEXT
     )
   `);
 
-  // Migração: bancos existentes criados antes da coluna lat/lng não a possuem.
-  await runSQL(`ALTER TABLE structures ADD COLUMN IF NOT EXISTS lat REAL`);
-  await runSQL(`ALTER TABLE structures ADD COLUMN IF NOT EXISTS lng REAL`);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 3. TABELA DE REGRAS DE COMPONENTES
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
     CREATE TABLE IF NOT EXISTS "componentRules" (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       icon TEXT,
       description TEXT,
-      anomalies TEXT NOT NULL
+      weight INTEGER NOT NULL DEFAULT 1,
+      anomalies JSONB NOT NULL DEFAULT '[]',
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
     )
   `);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 4. TABELA DE ORDENS DE SERVIÇO
-  // ─────────────────────────────────────────────────────────────────────────────
+  await runSQL(`
+    CREATE TABLE IF NOT EXISTS severities (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'severidade' CHECK(kind IN ('severidade', 'risco')),
+      label TEXT NOT NULL,
+      color TEXT,
+      points INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
+    )
+  `);
+
   await runSQL(`
     CREATE TABLE IF NOT EXISTS "serviceOrders" (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL CHECK(type IN ('inspecao', 'execucao')),
       om TEXT,
-      "inspectionType" TEXT CHECK("inspectionType" IN ('Patrulhamento', 'Minuciosa', 'Termográfica', 'Lavagem', 'Limpeza', 'Outras')),
+      "inspectionType" TEXT,
       "structureId" TEXT NOT NULL,
-      "structureName" TEXT NOT NULL,
-      "supervisorId" TEXT NOT NULL,
-      "supervisorName" TEXT NOT NULL,
       "technicianId" TEXT,
-      "technicianName" TEXT,
-      status TEXT NOT NULL CHECK(status IN ('pendente', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
-      "startDate" TEXT,
-      "endDate" TEXT,
-      priority TEXT CHECK(priority IN ('baixa', 'media', 'alta', 'critica')),
+      "supervisorId" TEXT,
+      priority TEXT CHECK(priority IN ('baixa', 'media', 'alta')),
+      deadline TEXT,
+      "scheduledDate" TEXT,
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
+      "startedAt" TEXT,
+      "pausedAt" TEXT,
+      "resumedAt" TEXT,
+      "completedAt" TEXT,
+      "inspectionRecordId" TEXT,
+      "executionRecordId" TEXT,
+      component TEXT,
+      anomaly TEXT,
       description TEXT,
+      details TEXT,
+      "deadlineRules" TEXT,
+      "supervisorNotes" TEXT,
+      "inspectionData" JSONB,
+      photos JSONB NOT NULL DEFAULT '[]',
+      "activityLog" JSONB NOT NULL DEFAULT '[]',
       "createdAt" TEXT NOT NULL,
       "updatedAt" TEXT NOT NULL,
-      "deadline" TEXT,
-      FOREIGN KEY("structureId") REFERENCES structures(id),
-      FOREIGN KEY("supervisorId") REFERENCES users(id),
-      FOREIGN KEY("technicianId") REFERENCES users(id)
+      "deletedAt" TEXT,
+      "deviceId" TEXT
     )
   `);
 
-  // Migração: bancos existentes criados antes das colunas om/inspectionType não as possuem.
-  await runSQL(`ALTER TABLE "serviceOrders" ADD COLUMN IF NOT EXISTS om TEXT`);
-  await runSQL(`ALTER TABLE "serviceOrders" ADD COLUMN IF NOT EXISTS "inspectionType" TEXT`);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 5. TABELA DE INSPEÇÕES
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
     CREATE TABLE IF NOT EXISTS "inspectionRecords" (
       id TEXT PRIMARY KEY,
-      "orderId" TEXT NOT NULL,
-      "estruturaId" TEXT NOT NULL,
-      "estruturaNome" TEXT NOT NULL,
-      "supervisorId" TEXT NOT NULL,
-      "supervisorNome" TEXT NOT NULL,
-      "tecnicoId" TEXT NOT NULL,
-      "tecnicoNome" TEXT NOT NULL,
+      "orderId" TEXT,
+      "estruturaId" TEXT,
+      "estruturaNome" TEXT,
+      "supervisorId" TEXT,
+      "supervisorNome" TEXT,
+      "tecnicoId" TEXT,
+      "tecnicoNome" TEXT,
       "dataHoraAbertura" TEXT NOT NULL,
       "dataHoraFim" TEXT,
-      status TEXT NOT NULL CHECK(status IN ('aberto', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
+      status TEXT NOT NULL DEFAULT 'aberto' CHECK(status IN ('aberto', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
+      components JSONB NOT NULL DEFAULT '[]',
+      "historicoPausas" JSONB NOT NULL DEFAULT '[]',
       "observacoesGerais" TEXT,
+      origem TEXT NOT NULL DEFAULT 'app' CHECK(origem IN ('app', 'importado')),
       "createdAt" TEXT NOT NULL,
       "updatedAt" TEXT NOT NULL,
-      FOREIGN KEY("orderId") REFERENCES "serviceOrders"(id),
-      FOREIGN KEY("estruturaId") REFERENCES structures(id),
-      FOREIGN KEY("supervisorId") REFERENCES users(id),
-      FOREIGN KEY("tecnicoId") REFERENCES users(id)
+      "deletedAt" TEXT,
+      "deviceId" TEXT
     )
   `);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 6. TABELA DE COMPONENTES INSPECIONADOS
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
-    CREATE TABLE IF NOT EXISTS "componentInspections" (
+    CREATE TABLE IF NOT EXISTS "executionRecords" (
       id TEXT PRIMARY KEY,
-      "inspectionId" TEXT NOT NULL,
-      "componentId" TEXT NOT NULL,
-      "componentName" TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('pendente', 'ok', 'anomalia', 'nao-aplicavel')),
-      notes TEXT,
-      "createdAt" TEXT NOT NULL,
-      FOREIGN KEY("inspectionId") REFERENCES "inspectionRecords"(id),
-      FOREIGN KEY("componentId") REFERENCES "componentRules"(id)
-    )
-  `);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 7. TABELA DE ANOMALIAS
-  // ─────────────────────────────────────────────────────────────────────────────
-  await runSQL(`
-    CREATE TABLE IF NOT EXISTS anomalies (
-      id TEXT PRIMARY KEY,
-      "componentInspectionId" TEXT NOT NULL,
-      "inspectionId" TEXT NOT NULL,
-      "anomalyName" TEXT NOT NULL,
-      severity TEXT CHECK(severity IN ('leve', 'moderada', 'grave', 'critica')),
-      phase TEXT,
-      "isEmenda" BOOLEAN DEFAULT FALSE,
-      "safetyRisk" TEXT CHECK("safetyRisk" IN ('leve', 'moderada', 'grave', 'critica')),
-      "operationalRisk" TEXT CHECK("operationalRisk" IN ('leve', 'moderada', 'grave', 'critica')),
-      "requiresShutdown" BOOLEAN DEFAULT FALSE,
-      "isRecurrent" BOOLEAN DEFAULT FALSE,
-      observation TEXT,
-      photo TEXT,
-      latitude REAL,
-      longitude REAL,
-      accuracy REAL,
-      "createdAt" TEXT NOT NULL,
-      FOREIGN KEY("componentInspectionId") REFERENCES "componentInspections"(id),
-      FOREIGN KEY("inspectionId") REFERENCES "inspectionRecords"(id)
-    )
-  `);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 8. TABELA DE EXECUÇÕES
-  // ─────────────────────────────────────────────────────────────────────────────
-  await runSQL(`
-    CREATE TABLE IF NOT EXISTS executions (
-      id TEXT PRIMARY KEY,
-      "orderId" TEXT NOT NULL,
-      "estructuraId" TEXT NOT NULL,
-      "estructuraNome" TEXT NOT NULL,
-      "supervisorId" TEXT NOT NULL,
-      "supervisorNome" TEXT NOT NULL,
-      "tecnicoId" TEXT NOT NULL,
-      "tecnicoNome" TEXT NOT NULL,
-      "dataHoraAbertura" TEXT NOT NULL,
-      "dataHoraFim" TEXT,
-      status TEXT NOT NULL CHECK(status IN ('aberto', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
-      "observacoesGerais" TEXT,
-      "createdAt" TEXT NOT NULL,
-      "updatedAt" TEXT NOT NULL,
-      FOREIGN KEY("orderId") REFERENCES "serviceOrders"(id)
-    )
-  `);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 9. TABELA DE FOTOS
-  // ─────────────────────────────────────────────────────────────────────────────
-  await runSQL(`
-    CREATE TABLE IF NOT EXISTS photos (
-      id TEXT PRIMARY KEY,
+      "orderId" TEXT,
       "inspectionId" TEXT,
-      "executionId" TEXT,
-      filename TEXT NOT NULL,
-      path TEXT NOT NULL,
-      "componentName" TEXT,
-      "anomalyName" TEXT,
-      latitude REAL,
-      longitude REAL,
-      accuracy REAL,
-      metadata TEXT,
+      "estruturaId" TEXT,
+      "estruturaNome" TEXT,
+      "supervisorId" TEXT,
+      "supervisorNome" TEXT,
+      "tecnicoId" TEXT,
+      "tecnicoNome" TEXT,
+      componente TEXT,
+      anomalia TEXT,
+      descricao TEXT,
+      detalhes TEXT,
+      "prazoRegras" TEXT,
+      "notasSupervisor" TEXT,
+      "dataHoraAbertura" TEXT NOT NULL,
+      "dataHoraExecucaoInicio" TEXT,
+      "dataHoraExecucaoFim" TEXT,
+      "dataHoraFim" TEXT,
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
+      "historicoPausas" JSONB NOT NULL DEFAULT '[]',
+      "observacoesGerais" TEXT,
       "createdAt" TEXT NOT NULL,
-      FOREIGN KEY("inspectionId") REFERENCES "inspectionRecords"(id),
-      FOREIGN KEY("executionId") REFERENCES executions(id)
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT,
+      "deviceId" TEXT
     )
   `);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 10. TABELA DE HISTÓRICO DE PAUSA
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
-    CREATE TABLE IF NOT EXISTS "pauseHistory" (
+    CREATE TABLE IF NOT EXISTS splices (
       id TEXT PRIMARY KEY,
-      "inspectionId" TEXT NOT NULL,
-      "userId" TEXT,
-      "userName" TEXT,
-      "pausedAt" TEXT NOT NULL,
-      "resumedAt" TEXT,
-      reason TEXT,
-      FOREIGN KEY("inspectionId") REFERENCES "inspectionRecords"(id),
-      FOREIGN KEY("userId") REFERENCES users(id)
+      "pontoEmenda" TEXT NOT NULL,
+      "estruturaOrigem" TEXT NOT NULL,
+      "estruturaDestino" TEXT NOT NULL,
+      fase TEXT NOT NULL,
+      tipo TEXT,
+      descricao TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
     )
   `);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 11. TABELA DE ESTADO/SINCRONIZAÇÃO
-  // ─────────────────────────────────────────────────────────────────────────────
   await runSQL(`
-    CREATE TABLE IF NOT EXISTS state (
+    CREATE TABLE IF NOT EXISTS "systemLogs" (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      level TEXT NOT NULL CHECK(level IN ('info', 'warning', 'error', 'success')),
+      module TEXT NOT NULL,
+      message TEXT NOT NULL,
+      "userId" TEXT,
+      "userName" TEXT
+    )
+  `);
+
+  await runSQL(`
+    CREATE TABLE IF NOT EXISTS backups (
+      id TEXT PRIMARY KEY,
+      "createdAt" TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('manual', 'scheduled')),
+      "sizeBytes" INTEGER NOT NULL,
+      data BYTEA NOT NULL
+    )
+  `);
+
+  await runSQL(`
+    CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
+      value JSONB NOT NULL,
       "updatedAt" TEXT NOT NULL
     )
   `);
+
+  // Índices usados pelo motor de sincronização (pull por "updatedAt").
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_structures_updated ON structures ("updatedAt")`);
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_orders_updated ON "serviceOrders" ("updatedAt")`);
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_inspections_updated ON "inspectionRecords" ("updatedAt")`);
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_executions_updated ON "executionRecords" ("updatedAt")`);
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_users_updated ON users ("updatedAt")`);
 
   console.log('✅ Todas as tabelas criadas/verificadas com sucesso!');
 }

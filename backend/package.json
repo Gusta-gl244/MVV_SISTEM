@@ -1,6 +1,6 @@
 {
   "name": "inspec360-backend",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Backend for INSPEC360 inspection system",
   "type": "module",
   "main": "src/server.js",
@@ -10,17 +10,23 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "init-db": "node src/database/init-postgres.js",
-    "diagnose": "node src/database/diagnose.js",
-    "clean-data": "node src/database/clean-simulated-data.js",
-    "reset-structures": "node src/database/reset-structures.js"
+    "import-reference-data": "node src/database/import-reference-data.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "archiver": "^7.0.1",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
     "pg": "^8.11.3",
-    "multer": "^2.0.2",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
+  }
 }

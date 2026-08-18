@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import newLogo from '../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567-1.png';
-import producedByLogo from '../../imports/produced-by-bnmc-vale-verde.png';
+import inspec360Logo from '../../assets/brand/inspec360-color.png';
+import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -20,26 +20,26 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [error, setError] = useState('');
   const versionInfo = useVersionInfo();
 
+  const isDevMode = import.meta.env.VITE_DEV_MODE === 'true';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    setTimeout(() => {
-      const sysUser = authenticate(email, password);
-      if (sysUser) {
-        onLogin({
-          id: sysUser.id,
-          name: sysUser.name,
-          email: sysUser.email,
-          role: sysUser.role,
-          avatar: sysUser.avatar,
-        });
-      } else {
-        setError('E-mail ou senha inválidos. Verifique suas credenciais.');
-      }
-      setLoading(false);
-    }, 800);
+    const sysUser = await authenticate(email, password);
+    if (sysUser) {
+      onLogin({
+        id: sysUser.id,
+        name: sysUser.name,
+        email: sysUser.email,
+        role: sysUser.role,
+        avatar: sysUser.avatar,
+      });
+    } else {
+      setError('E-mail ou senha inválidos. Verifique suas credenciais.');
+    }
+    setLoading(false);
   };
 
   return (
@@ -65,9 +65,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="h-1.5" style={{ backgroundColor: '#AA8933' }} />
 
           <div className="p-8">
-            {/* Dual Logo */}
-            <div className="flex items-center justify-center gap-4 mb-6">
-              <img src={newLogo} alt="Logo" className="h-28 w-auto object-contain" />
+            {/* Logo */}
+            <div className="flex items-center justify-center mb-6">
+              <img src={inspec360Logo} alt="INSPEC360" className="h-28 w-auto object-contain" />
             </div>
 
             {/* Title */}
@@ -123,30 +123,33 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               </Button>
             </form>
 
-            {/* Demo hint */}
-            <div className="mt-6 pt-5 border-t border-gray-100">
-              <p className="text-xs text-gray-400 text-center mb-2">Contas de demonstração:</p>
-              <div className="space-y-1">
-                {[
-                  { email: 'ismar.santos@vale-verde.com', label: 'Técnico' },
-                  { email: 'supervisor@inspec360.com', label: 'Supervisor' },
-                  { email: 'admin@inspec360.com', label: 'Super Admin' },
-                ].map((acc) => (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    onClick={() => { setEmail(acc.email); setPassword('123456'); }}
-                    className="w-full text-left text-xs px-3 py-1.5 rounded hover:bg-gray-50 transition-colors flex justify-between items-center"
-                  >
-                    <span className="text-gray-600">{acc.email}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: '#193A2A' }}>
-                      {acc.label}
-                    </span>
-                  </button>
-                ))}
-                <p className="text-xs text-gray-400 text-center pt-1">Senha: 123456</p>
+            {/* Contas de teste — só aparece em modo de desenvolvimento
+                (VITE_DEV_MODE=true). Some sozinho na publicação real. */}
+            {isDevMode && (
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <p className="text-xs text-amber-600 text-center mb-2 font-medium">⚠️ Modo de desenvolvimento — contas de teste:</p>
+                <div className="space-y-1">
+                  {[
+                    { email: 'tecnico@inspec360.com', label: 'Técnico' },
+                    { email: 'supervisor@inspec360.com', label: 'Supervisor' },
+                    { email: 'admin@inspec360.com', label: 'Super Admin' },
+                  ].map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      onClick={() => { setEmail(acc.email); setPassword('inspec360'); }}
+                      className="w-full text-left text-xs px-3 py-1.5 rounded hover:bg-gray-50 transition-colors flex justify-between items-center"
+                    >
+                      <span className="text-gray-600">{acc.email}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: '#193A2A' }}>
+                        {acc.label}
+                      </span>
+                    </button>
+                  ))}
+                  <p className="text-xs text-gray-400 text-center pt-1">Senha: inspec360</p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -162,12 +165,12 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </p>
         )}
 
-        {/* Produced by — empresa controladora do grupo */}
+        {/* Grupo controlador */}
         <div className="flex justify-center mt-4">
           <img
-            src={producedByLogo}
-            alt="Produced by BNMC · Mineração Vale Verde"
-            className="w-52 max-w-full h-auto rounded-lg opacity-90"
+            src={grupoLogo}
+            alt="Mineração Vale Verde · BNMC"
+            className="w-56 max-w-full h-auto drop-shadow-lg"
           />
         </div>
       </div>

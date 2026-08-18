@@ -18,9 +18,8 @@ import {
   Calendar,
   RefreshCw,
 } from 'lucide-react';
-import logo from '../../imports/image-removebg-preview_(10).png';
-import logo2 from '../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567.png';
-import newLogo from '../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567-1.png';
+import inspec360Icon from '../../assets/brand/inspec360-icon-white.png';
+import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
@@ -462,8 +461,13 @@ export function TecnicoApp({ user, onLogout }: TecnicoAppProps) {
       {/* Header */}
       <div className="sticky top-0 z-10 shadow-md" style={{ backgroundColor: '#193A2A' }}>
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <img src={newLogo} alt="Logo" className="h-9 w-auto" />
+          <div className="flex items-center gap-2.5">
+            <img src={inspec360Icon} alt="" className="h-8 w-8" />
+            <span className="text-white text-[15px] tracking-wide leading-none">
+              INSPEC<span style={{ color: '#AA8933' }}>360</span>
+            </span>
+            <div className="w-px h-6 bg-white/15 hidden sm:block" />
+            <img src={grupoLogo} alt="Mineração Vale Verde · BNMC" className="h-6 w-auto rounded hidden sm:block" />
           </div>
           <div className="flex-1 px-3">
             <div className="text-white text-xs opacity-75">Técnico</div>

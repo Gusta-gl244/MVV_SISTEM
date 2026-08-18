@@ -21,7 +21,12 @@ import { Button } from '../ui/button';
 import type { ServiceOrder, Structure } from '../../data/types';
 import { collectOrderPhotos } from '../../data/orderPhotos';
 import { PhotoLightbox } from '../../../components/PhotoLightbox';
-import newLogo from '../../../imports/Firefly_Gemini_Flash_recrie_a_imagem_com_qualidade_melhor__331567-1.png';
+import inspec360Icon from '../../../assets/brand/inspec360-icon-white.png';
+import grupoLogo from '../../../assets/brand/grupo-mvv-bnmc.png';
+
+// Absoluta porque o relatório abre numa janela `about:blank` (window.open + document.write) —
+// um caminho relativo ao bundle não resolveria contra a origem certa nessa janela.
+const absoluteAssetUrl = (path: string) => new URL(path, window.location.href).href;
 
 interface CompletedOrdersTabProps {
   orders: ServiceOrder[];
@@ -121,7 +126,10 @@ function generateOrderPDF(
       display: flex; flex-direction: column; gap: 12px;
     }
     .cover-header { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
-    .cover-logo { height: 60px; width: auto; filter: brightness(0) invert(1); }
+    .cover-brand { display: flex; align-items: center; gap: 10px; }
+    .cover-logo { height: 42px; width: 42px; }
+    .cover-wordmark { font-size: 15pt; letter-spacing: 0.5px; }
+    .cover-wordmark .accent { color: #AA8933; }
     .cover-divider { width: 1px; height: 50px; background: rgba(255,255,255,0.3); }
     .cover-title { font-size: 22pt; letter-spacing: 0.5px; }
     .cover-subtitle { font-size: 11pt; opacity: 0.8; margin-top: 4px; }
@@ -193,11 +201,12 @@ function generateOrderPDF(
       padding: 14px; color: #78350f; font-size: 10.5pt; line-height: 1.5;
     }
     
-    .footer { 
+    .footer {
       margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb;
       display: flex; justify-content: space-between; align-items: center;
       color: #9ca3af; font-size: 8.5pt;
     }
+    .footer-logo { height: 22px; width: auto; opacity: 0.85; }
     
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -211,6 +220,11 @@ function generateOrderPDF(
 
 <div class="cover">
   <div class="cover-header">
+    <div class="cover-brand">
+      <img src="${absoluteAssetUrl(inspec360Icon)}" alt="" class="cover-logo" />
+      <span class="cover-wordmark">INSPEC<span class="accent">360</span></span>
+    </div>
+    <div class="cover-divider"></div>
     <div>
       <div class="cover-title">Relatório de Ordem de Serviço</div>
       <div class="cover-subtitle">INSPEC360 · Sistema de Inspeções · LT 230kV</div>
@@ -373,7 +387,7 @@ function generateOrderPDF(
   }
 
   <div class="footer">
-    <span>INSPEC360 · Mineração Vale Verde · LT 230kV</span>
+    <img src="${absoluteAssetUrl(grupoLogo)}" alt="Mineração Vale Verde · BNMC" class="footer-logo" />
     <span>Relatório gerado em ${new Date().toLocaleString('pt-BR')}</span>
     <span>Ordem: ${order.id.toUpperCase()}</span>
   </div>

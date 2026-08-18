@@ -13,7 +13,10 @@ export interface SystemUser {
   id: string;               // Identificador único
   name: string;             // Nome completo
   email: string;            // E-mail (login)
-  password: string;         // Senha (hash em produção)
+  // Sem campo de senha aqui de propósito: a senha nunca existe em texto
+  // puro no frontend, só como hash no servidor. Criar/alterar senha usa um
+  // campo `password` avulso (não faz parte deste tipo), enviado só na hora
+  // da troca e nunca guardado localmente depois.
   role: 'tecnico' | 'supervisor' | 'superadm'; // Tipo de acesso
   status: 'active' | 'inactive';               // Situação
   lastLogin: string;        // Último acesso

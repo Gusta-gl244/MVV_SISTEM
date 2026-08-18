@@ -53,4 +53,15 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/executions/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    await queries.deleteExecution(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error('❌ Erro ao excluir execução:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

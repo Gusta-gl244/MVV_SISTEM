@@ -6,8 +6,7 @@ const router = express.Router();
 // GET /api/inspections - Obter todas as inspeções
 router.get('/', async (req, res) => {
   try {
-    const inspections = await queries.getAllInspections();
-    res.json(inspections);
+    res.json(await queries.getAllInspections());
   } catch (error) {
     console.error('❌ Erro ao buscar inspeções:', error.message);
     res.status(500).json({ error: error.message });
@@ -18,9 +17,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const inspection = await queries.getInspectionById(req.params.id);
-    if (!inspection) {
-      return res.status(404).json({ error: 'Inspeção não encontrada' });
-    }
+    if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
     res.json(inspection);
   } catch (error) {
     console.error('❌ Erro ao buscar inspeção:', error.message);
@@ -28,7 +25,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/inspections - Criar nova inspeção
+// POST /api/inspections - Criar nova inspeção (components/historicoPausas já vêm prontos no payload)
 router.post('/', async (req, res) => {
   try {
     const inspection = await queries.createInspection(req.body);
@@ -43,9 +40,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const inspection = await queries.updateInspection(req.params.id, req.body);
-    if (!inspection) {
-      return res.status(404).json({ error: 'Inspeção não encontrada' });
-    }
+    if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
     res.json(inspection);
   } catch (error) {
     console.error('❌ Erro ao atualizar inspeção:', error.message);
@@ -53,69 +48,13 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// POST /api/inspections/:id/components - Adicionar componente à inspeção
-router.post('/:id/components', async (req, res) => {
+// DELETE /api/inspections/:id
+router.delete('/:id', async (req, res) => {
   try {
-    const component = await queries.createComponentInspection({
-      inspectionId: req.params.id,
-      ...req.body
-    });
-    res.status(201).json(component);
+    await queries.deleteInspection(req.params.id);
+    res.status(204).send();
   } catch (error) {
-    console.error('❌ Erro ao adicionar componente:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/inspections/:id/anomalies - Adicionar anomalia
-router.post('/:id/anomalies', async (req, res) => {
-  try {
-    const anomaly = await queries.createAnomaly({
-      inspectionId: req.params.id,
-      ...req.body
-    });
-    res.status(201).json(anomaly);
-  } catch (error) {
-    console.error('❌ Erro ao adicionar anomalia:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/inspections/:id/photos - Adicionar foto
-router.post('/:id/photos', async (req, res) => {
-  try {
-    const photo = await queries.createPhoto({
-      inspectionId: req.params.id,
-      ...req.body
-    });
-    res.status(201).json(photo);
-  } catch (error) {
-    console.error('❌ Erro ao adicionar foto:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/inspections/:id/pause - Pausar inspeção
-router.post('/:id/pause', async (req, res) => {
-  try {
-    const pause = await queries.createPause({
-      inspectionId: req.params.id,
-      ...req.body
-    });
-    res.status(201).json(pause);
-  } catch (error) {
-    console.error('❌ Erro ao pausar inspeção:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// PUT /api/inspections/pause/:pauseId/resume - Retomar inspeção
-router.put('/pause/:pauseId/resume', async (req, res) => {
-  try {
-    const pause = await queries.resumePause(req.params.pauseId);
-    res.json(pause);
-  } catch (error) {
-    console.error('❌ Erro ao retomar inspeção:', error.message);
+    console.error('❌ Erro ao excluir inspeção:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
