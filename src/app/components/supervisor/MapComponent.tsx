@@ -107,6 +107,12 @@ export function MapComponent({
   const onStructureClickRef = useRef(onStructureClick);
   const structuresRef = useRef(structures);
   const ordersRef = useRef(orders);
+  // Reenquadra o mapa (fitBounds/setView) só na primeira vez que os
+  // marcadores aparecem — sem isso, a sincronização em segundo plano (a
+  // cada 20s, useDataSync/initSyncEngine) recria as props structures/orders
+  // e faz o mapa "pular" de volta pra visão geral, desfazendo zoom/pan
+  // manual do usuário.
+  const hasAutoFitRef = useRef(false);
   const { location } = useOnlineStatus();
 
   // Subestação principal da Mineração Vale Verde — coordenada real
@@ -191,8 +197,11 @@ export function MapComponent({
 
     updateLabelVisibility(map);
 
-    // Auto-fit map to show all structure markers
-    if (validPoints.length > 0) {
+    // Auto-fit map to show all structure markers — só da primeira vez (ver
+    // comentário em hasAutoFitRef), pra não brigar com o zoom/pan do usuário
+    // a cada re-render disparado pela sincronização em segundo plano.
+    if (validPoints.length > 0 && !hasAutoFitRef.current) {
+      hasAutoFitRef.current = true;
       if (validPoints.length === 1) {
         map.setView(validPoints[0], 14);
       } else {
