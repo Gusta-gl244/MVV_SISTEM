@@ -463,9 +463,12 @@ export function TecnicoApp({ user, onLogout }: TecnicoAppProps) {
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
             <img src={inspec360Icon} alt="" className="h-8 w-8" />
-            <span className="text-white text-[15px] tracking-wide leading-none">
-              INSPEC<span style={{ color: '#AA8933' }}>360</span>
-            </span>
+            <div className="flex flex-col leading-none gap-0.5">
+              <span className="text-white text-[15px] tracking-wide leading-none">
+                INSPEC<span style={{ color: '#AA8933' }}>360</span>
+              </span>
+              <span className="text-white/60 text-[9px] uppercase tracking-wide leading-none">Linha de Transmissão</span>
+            </div>
             <div className="w-px h-6 bg-white/15 hidden sm:block" />
             <img src={grupoLogo} alt="Mineração Vale Verde · BNMC" className="h-6 w-auto rounded hidden sm:block" />
           </div>

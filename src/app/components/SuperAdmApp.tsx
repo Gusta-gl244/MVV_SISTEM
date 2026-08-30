@@ -560,9 +560,12 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src={inspec360Icon} alt="" className="h-9 w-9" />
-            <span className="text-white text-base tracking-wide leading-none">
-              INSPEC<span style={{ color: '#AA8933' }}>360</span>
-            </span>
+            <div className="flex flex-col leading-none gap-0.5">
+              <span className="text-white text-base tracking-wide leading-none">
+                INSPEC<span style={{ color: '#AA8933' }}>360</span>
+              </span>
+              <span className="text-white/60 text-[9px] uppercase tracking-wide leading-none">Linha de Transmissão</span>
+            </div>
             <div className="w-px h-7 bg-white/15 hidden sm:block" />
             <img src={grupoLogo} alt="Mineração Vale Verde · BNMC" className="h-7 w-auto rounded hidden sm:block" />
             <div className="text-white ml-2">
