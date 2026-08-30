@@ -321,13 +321,30 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
       ) / 10
     : 0;
 
+  // Situação atual de cada estrutura — mutuamente exclusiva (mesma prioridade
+  // usada em computeStructureStatus), então a soma das 4 categorias abaixo
+  // sempre bate com o total de estruturas. "Anomalia" entra em "Concluídas"
+  // (a inspeção já foi concluída, só ficou marcada com anomalia) e "Ordem
+  // Atribuída" entra em "Pendentes" (ainda não foi iniciada).
+  const structureStatusCounts = structures.reduce(
+    (acc, s) => {
+      const status = computeStructureStatus(s, orders);
+      if (status === 'atrasada') acc.atrasadas++;
+      else if (status === 'em-andamento') acc.emAndamento++;
+      else if (status === 'concluida' || status === 'anomalia') acc.concluidas++;
+      else acc.pendentes++; // 'pendente' ou 'atribuida'
+      return acc;
+    },
+    { emAndamento: 0, atrasadas: 0, pendentes: 0, concluidas: 0 }
+  );
+
   const stats = {
     totalStructures: structures.length,
-    anomalias: structures.filter((s) => computeStructureStatus(s, orders) === 'anomalia').length,
-    atrasados: dashboardOrders.filter((o) => o.status !== 'concluido' && new Date(o.deadline) < new Date()).length,
-    concluidos: dashboardOrders.filter((o) => o.status === 'concluido').length,
-    emAndamento: dashboardOrders.filter((o) => o.status === 'em-andamento' || o.status === 'pausado').length,
-    pendentes: dashboardOrders.filter((o) => o.status === 'pendente').length,
+    emAndamento: structureStatusCounts.emAndamento,
+    atrasadas: structureStatusCounts.atrasadas,
+    pendentes: structureStatusCounts.pendentes,
+    concluidas: structureStatusCounts.concluidas,
+    completedOrders: dashboardOrders.filter((o) => o.status === 'concluido').length,
     byInspectionType: INSPECTION_TYPES.map((t) => ({
       type: t,
       count: dashboardOrders.filter((o) => o.inspectionType === t).length,
@@ -727,10 +744,9 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
               {[
                 { label: 'Estruturas', value: stats.totalStructures, icon: Building2, color: '#193A2A' },
                 { label: 'Em Andamento', value: stats.emAndamento, icon: Clock, color: '#AA8933' },
-                { label: 'Anomalias', value: stats.anomalias, icon: AlertTriangle, color: '#dc2626' },
-                { label: 'Atrasados', value: stats.atrasados, icon: AlertTriangle, color: '#ea580c' },
+                { label: 'Atrasadas', value: stats.atrasadas, icon: AlertTriangle, color: '#ea580c' },
                 { label: 'Pendentes', value: stats.pendentes, icon: ClipboardList, color: '#6b7280' },
-                { label: 'Concluídos', value: stats.concluidos, icon: CheckCircle2, color: '#16a34a' },
+                { label: 'Concluídas', value: stats.concluidas, icon: CheckCircle2, color: '#16a34a' },
                 { label: 'Duração Média (dias)', value: stats.avgDurationDays, icon: Clock, color: '#7c3aed' },
               ].map((stat) => {
                 const Icon = stat.icon;
@@ -766,7 +782,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
             )}
 
             {/* Quick access to completed orders */}
-            {stats.concluidos > 0 && (
+            {stats.completedOrders > 0 && (
               <Card
                 className="p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow border-l-4"
                 style={{ borderLeftColor: '#16a34a' }}
@@ -776,7 +792,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="w-5 h-5 text-green-600" />
                     <div>
-                      <div className="text-sm text-gray-800">{stats.concluidos} ordem{stats.concluidos !== 1 ? 's' : ''} concluída{stats.concluidos !== 1 ? 's' : ''}</div>
+                      <div className="text-sm text-gray-800">{stats.completedOrders} ordem{stats.completedOrders !== 1 ? 's' : ''} concluída{stats.completedOrders !== 1 ? 's' : ''}</div>
                       <div className="text-xs text-gray-400">Ver relatórios completos com fotos e dados</div>
                     </div>
                   </div>

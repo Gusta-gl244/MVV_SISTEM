@@ -21,7 +21,7 @@ export async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
       "passwordHash" TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('tecnico', 'supervisor', 'superadm')),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
@@ -230,6 +230,13 @@ export async function initializeDatabase() {
       "updatedAt" TEXT NOT NULL
     )
   `);
+
+  // Migração: a UNIQUE global em "email" impedia reaproveitar o e-mail de um
+  // usuário excluído (exclusão é soft-delete — só marca "deletedAt", a linha
+  // continua existindo). Troca por um índice único parcial que só considera
+  // usuários ativos, liberando o e-mail assim que o usuário é excluído.
+  await runSQL(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key`);
+  await runSQL(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_active_idx ON users (email) WHERE "deletedAt" IS NULL`);
 
   // Índices usados pelo motor de sincronização (pull por "updatedAt").
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_structures_updated ON structures ("updatedAt")`);
