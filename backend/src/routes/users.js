@@ -46,11 +46,22 @@ router.post('/', requireRole('superadm'), async (req, res) => {
   }
 });
 
-// PUT /api/users/:id - Atualizar usuário
+// PUT /api/users/:id - Atualizar usuário (o próprio usuário, ou admin)
 router.put('/:id', async (req, res) => {
   try {
-    const { password, ...rest } = req.body;
+    const isSelf = req.user?.sub === req.params.id;
+    const isAdmin = req.user?.role === 'superadm';
+    if (!isSelf && !isAdmin) {
+      return res.status(403).json({ error: 'Sem permissão para editar este usuário' });
+    }
+
+    const { password, role, status, ...rest } = req.body;
     const updates = { ...rest };
+    // role e status só podem ser alterados por admin — nunca pelo próprio usuário (evita auto-promoção).
+    if (isAdmin) {
+      if (role !== undefined) updates.role = role;
+      if (status !== undefined) updates.status = status;
+    }
     if (password) {
       if (password.length < 6) return res.status(400).json({ error: 'Senha deve ter ao menos 6 caracteres' });
       updates.passwordHash = await bcrypt.hash(password, 10);

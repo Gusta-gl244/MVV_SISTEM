@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import * as queries from './queries-postgres.js';
 
 /**
@@ -19,12 +20,13 @@ export async function seedTestAccountsIfEmpty() {
     { name: 'Supervisor Teste', email: 'supervisor@inspec360.com', role: 'supervisor' },
     { name: 'Administrador', email: 'admin@inspec360.com', role: 'superadm' },
   ];
-  const password = 'inspec360';
-  const passwordHash = await bcrypt.hash(password, 10);
 
+  console.log('🔑 Senhas geradas automaticamente (únicas por conta, veja abaixo). Altere depois do primeiro login:');
   for (const acc of accounts) {
+    // Senha aleatória por conta — nunca um valor fixo compartilhado (evita brute-force/credential stuffing padrão).
+    const password = crypto.randomBytes(9).toString('base64url');
+    const passwordHash = await bcrypt.hash(password, 10);
     await queries.createUser({ ...acc, passwordHash, status: 'active' });
+    console.log(`   ${acc.email} — ${password}`);
   }
-
-  console.log(`✅ Contas de teste criadas (senha para todas: "${password}"). Altere depois de testar.`);
 }

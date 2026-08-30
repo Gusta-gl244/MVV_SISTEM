@@ -41,7 +41,26 @@ router.post('/push', async (req, res) => {
           continue;
         }
 
+        if (m.entity === 'users') {
+          const isSelf = req.user?.sub === m.id;
+          const isAdmin = req.user?.role === 'superadm';
+          if (!isSelf && !isAdmin) {
+            results.push({ clientOpId: m.clientOpId, status: 'error', error: 'Sem permissão para alterar este usuário' });
+            continue;
+          }
+          if (m.payload) {
+            // passwordHash nunca é setável via sync — sempre passa por /api/users com bcrypt.
+            delete m.payload.passwordHash;
+            // role só é alterável por admin, nunca pelo próprio usuário.
+            if (!isAdmin) delete m.payload.role;
+          }
+        }
+
         if (m.op === 'delete') {
+          if (m.entity === 'users' && req.user?.role !== 'superadm') {
+            results.push({ clientOpId: m.clientOpId, status: 'error', error: 'Sem permissão para excluir usuários' });
+            continue;
+          }
           const record = await queries.softDelete(m.entity, m.id);
           results.push({ clientOpId: m.clientOpId, status: 'ok', record });
         } else {
