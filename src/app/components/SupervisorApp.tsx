@@ -43,6 +43,7 @@ import { useDataSync, forceSync } from '@/hooks/useDataSync';
 import { useOnlineStatus } from '@/context/OfflineContext';
 import {
   computeStructureStatus,
+  computeStructureStatusFlags,
   STRUCTURE_STATUS_COLORS,
   STRUCTURE_STATUS_LABELS,
 } from '../data/structureStatus';
@@ -321,28 +322,33 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
       ) / 10
     : 0;
 
-  // Situação atual de cada estrutura — mutuamente exclusiva (mesma prioridade
-  // usada em computeStructureStatus), então a soma das 4 categorias abaixo
-  // sempre bate com o total de estruturas. "Anomalia" entra em "Concluídas"
-  // (a inspeção já foi concluída, só ficou marcada com anomalia) e "Ordem
-  // Atribuída" entra em "Pendentes" (ainda não foi iniciada).
+  // Situação de trabalho de cada estrutura — Em Andamento / Não Iniciadas /
+  // Concluídas são mutuamente exclusivas (a soma sempre bate com o total de
+  // estruturas). "Atrasadas" é um alerta à parte, não uma 4ª categoria
+  // exclusiva: uma inspeção atrasada continua contando em "Em Andamento" ou
+  // "Não Iniciadas" normalmente, só que também soma em "Atrasadas". "Ordem
+  // Atribuída" (ainda não iniciada) entra em "Não Iniciadas"; "Anomalia"
+  // entra em "Concluídas" (a inspeção já foi concluída, só ficou marcada).
   const structureStatusCounts = structures.reduce(
     (acc, s) => {
-      const status = computeStructureStatus(s, orders);
-      if (status === 'atrasada') acc.atrasadas++;
-      else if (status === 'em-andamento') acc.emAndamento++;
-      else if (status === 'concluida' || status === 'anomalia') acc.concluidas++;
-      else acc.pendentes++; // 'pendente' ou 'atribuida'
+      const { isOverdue, inProgress, lastCompleted, lastCompletionRecent } = computeStructureStatusFlags(s, orders);
+
+      if (inProgress) acc.emAndamento++;
+      else if (lastCompleted && lastCompletionRecent) acc.concluidas++;
+      else acc.naoIniciadas++; // "atribuída" (ainda não iniciada) ou sem nenhuma ordem
+
+      if (isOverdue) acc.atrasadas++;
+
       return acc;
     },
-    { emAndamento: 0, atrasadas: 0, pendentes: 0, concluidas: 0 }
+    { emAndamento: 0, atrasadas: 0, naoIniciadas: 0, concluidas: 0 }
   );
 
   const stats = {
     totalStructures: structures.length,
     emAndamento: structureStatusCounts.emAndamento,
     atrasadas: structureStatusCounts.atrasadas,
-    pendentes: structureStatusCounts.pendentes,
+    naoIniciadas: structureStatusCounts.naoIniciadas,
     concluidas: structureStatusCounts.concluidas,
     completedOrders: dashboardOrders.filter((o) => o.status === 'concluido').length,
     byInspectionType: INSPECTION_TYPES.map((t) => ({
@@ -745,7 +751,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
                 { label: 'Estruturas', value: stats.totalStructures, icon: Building2, color: '#193A2A' },
                 { label: 'Em Andamento', value: stats.emAndamento, icon: Clock, color: '#AA8933' },
                 { label: 'Atrasadas', value: stats.atrasadas, icon: AlertTriangle, color: '#ea580c' },
-                { label: 'Pendentes', value: stats.pendentes, icon: ClipboardList, color: '#6b7280' },
+                { label: 'Não Iniciadas', value: stats.naoIniciadas, icon: ClipboardList, color: '#6b7280' },
                 { label: 'Concluídas', value: stats.concluidas, icon: CheckCircle2, color: '#16a34a' },
                 { label: 'Duração Média (dias)', value: stats.avgDurationDays, icon: Clock, color: '#7c3aed' },
               ].map((stat) => {
